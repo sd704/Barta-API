@@ -9,21 +9,27 @@ authRouter.post('/api/auth/login', async (req, res) => {
 
         const userObj = await User.findOne({ email })
         if (!userObj) {
-            res.status(404).json({ message: `Invalid Credential!` })
+            return res.status(404).json({ message: `Invalid Credential!` })
         }
 
         const isPasswordValid = await bcrypt.compare(password, userObj.password)
         if (!isPasswordValid) {
-            res.status(404).json({ message: `Invalid Credential!` })
-        } else {
-            const token = await userObj.getJWT()
-            res.status(200).cookie("token", token).json({ message: `Login Successful!`, data: userObj.filterSafeData() })
+            return res.status(404).json({ message: `Invalid Credential!` })
         }
+
+        const token = await userObj.getJWT()
+        res.status(200).cookie("token", token).json({ message: `Login Successful!`, data: userObj.filterSafeData() })
     } catch (err) {
         res.status(500).json({ message: `Something went wrong: ${err}` })
     }
 })
 
-authRouter.post('/api/auth/logout', async (req, res) => { })
+authRouter.post('/api/auth/logout', async (req, res) => {
+    try {
+        res.status(200).cookie("token", null, { expires: new Date(Date.now()) }).json({ message: `Logout Successful!` })
+    } catch (err) {
+        res.status(500).json({ message: `Something went wrong: ${err}` })
+    }
+})
 
 module.exports = authRouter 

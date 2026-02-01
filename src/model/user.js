@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const validator = require('validator');
 const jwt = require('jsonwebtoken');
 const JWTKEY = process.env.JWTKEY;
-const { SAFE_DATA } = require("../utils/constant")
+const { SAFE_DATA, ALLOWED_UPDATES } = require("../utils/constant")
 
 const userSchema = new mongoose.Schema({
     firstName: { type: String, trim: true },

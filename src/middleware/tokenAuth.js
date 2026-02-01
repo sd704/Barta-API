@@ -5,16 +5,18 @@ const { User } = require("../model/user")
 const tokenAuth = async (req, res, next) => {
     try {
         const { token } = req.cookies
-        const _id = await jwt.verify(token, JWTKEY)
+        if (!token) {
+            return res.status(401).json({ message: 'Token not provided!' });
+        }
 
-        // If id not inside token
+        const _id = await jwt.verify(token, JWTKEY)
         if (!_id) {
-            res.status(404).json({ message: `Invalid Token!` })
+            return res.status(404).json({ message: `Invalid Token!` })
         }
 
         const userObj = await User.findById(_id)
         if (!userObj) {
-            res.status(404).json({ message: `Invalid Credential!` })
+            return res.status(404).json({ message: `Invalid Credential!` })
         }
         req.userObj = userObj // Passing the data with request object
         next()

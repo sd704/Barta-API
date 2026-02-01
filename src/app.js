@@ -25,7 +25,6 @@ app.use('/', (req, res, next) => {
 
 // This order is important err,req,res,next. This will handle all routes.
 app.use("/", (err, req, res, next) => {
-
     console.log("Something went wrong")
     res.status(500).json({ message: `Something went wrong: ${err}` })
 })
