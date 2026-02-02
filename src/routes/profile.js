@@ -28,10 +28,10 @@ userRouter.post('/api/user', async (req, res) => {
 
         // Creating a new instance of User model
         const user = new User(userObj)
-        await user.save()
+        const savedUser = await user.save()
 
         const token = await user.getJWT()
-        res.status(200).cookie("token", token).json({ message: `User data saved successfully`, data: user.filterSafeData() })
+        res.status(200).cookie("token", token).json({ message: `User data saved successfully`, data: savedUser.filterSafeData() })
     } catch (err) {
         res.status(500).json({ message: `Something went wrong: ${err}` })
     }
