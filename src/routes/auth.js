@@ -1,7 +1,7 @@
 const { User } = require("../model/user")
-const bcrypt = require('bcrypt');
-const express = require('express');
-const authRouter = express.Router();
+const bcrypt = require('bcrypt')
+const express = require('express')
+const authRouter = express.Router()
 
 authRouter.post('/api/auth/login', async (req, res) => {
     try {

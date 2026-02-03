@@ -4,6 +4,8 @@ const { connectDB } = require("./config/database")
 const authRouter = require('./routes/auth')
 const userRouter = require('./routes/profile')
 const connectionRouter = require('./routes/connection')
+const requestRouter = require('./routes/requests')
+const searchRouter = require('./routes/search')
 
 // Express App
 const app = express()
@@ -16,6 +18,8 @@ app.use(cookieParser())
 
 app.use('/', authRouter)
 app.use('/', userRouter)
+app.use('/', searchRouter)
+app.use('/', requestRouter)
 app.use('/', connectionRouter)
 
 // The 404 catch-all (after all routes)
