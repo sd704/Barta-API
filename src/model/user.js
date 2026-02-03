@@ -1,8 +1,8 @@
-const mongoose = require('mongoose');
-const validator = require('validator');
-const jwt = require('jsonwebtoken');
-const JWTKEY = process.env.JWTKEY;
-const { SAFE_DATA, ALLOWED_UPDATES } = require("../utils/constant")
+const mongoose = require('mongoose')
+const validator = require('validator')
+const jwt = require('jsonwebtoken')
+const JWTKEY = process.env.JWTKEY
+const { SAFE_DATA } = require("../utils/constant")
 
 const userSchema = new mongoose.Schema({
     firstName: { type: String, trim: true },
@@ -50,5 +50,5 @@ userSchema.methods.filterSafeData = function () {
     return Object.fromEntries(Object.entries(userObj.toJSON()).filter(([key]) => SAFE_DATA.includes(key)))
 }
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema)
 module.exports = { User }

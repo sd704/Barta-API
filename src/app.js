@@ -20,7 +20,7 @@ app.use('/', connectionRouter)
 
 // The 404 catch-all (after all routes)
 app.use('/', (req, res, next) => {
-    res.status(404).json({ message: `Route not found: ${req.originalUrl}` });
+    res.status(404).json({ message: `Route not found: ${req.originalUrl}` })
 });
 
 // This order is important err,req,res,next. This will handle all routes.

@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require('mongoose')
 
 const connectionSchema = new mongoose.Schema({
     senderId: {
@@ -13,7 +13,7 @@ const connectionSchema = new mongoose.Schema({
     },
     status: {
         type: String, lowercase: true, enum: {
-            values: ["accepted", "rejected", "interested", "ignored", "blocked"],
+            values: ["accepted", "rejected", "interested", "ignored"],
             message: `Invalid request type: {VALUE}`
         }
     }
@@ -29,5 +29,5 @@ connectionSchema.pre("save", async function () {
     }
 })
 
-const Connection = mongoose.model('Connection', connectionSchema);
+const Connection = mongoose.model('Connection', connectionSchema)
 module.exports = { Connection }
