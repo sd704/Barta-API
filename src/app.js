@@ -6,9 +6,13 @@ const userRouter = require('./routes/profile')
 const connectionRouter = require('./routes/connection')
 const requestRouter = require('./routes/requests')
 const searchRouter = require('./routes/search')
+const cors = require('cors')
 
 // Express App
 const app = express()
+
+// For handling cors
+app.use(cors({ origin: "http://localhost:5173", credentials: true, }))
 
 // We need this to read JSON data send in requests
 app.use(express.json())
