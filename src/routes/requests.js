@@ -6,7 +6,7 @@ const { SAFE_DATA, CONNECTION_SAFE_DATA } = require("../utils/constant")
 const express = require('express')
 const requestRouter = express.Router()
 
-// Send Friend Request
+// Send Connection Request
 requestRouter.post('/api/requests/interested/:id', tokenAuth, blockListCheck, async (req, res) => {
     try {
         const status = "interested"
@@ -36,6 +36,30 @@ requestRouter.post('/api/requests/interested/:id', tokenAuth, blockListCheck, as
         await savedObj.populate("receiverId", SAFE_DATA)
         const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
         return res.status(200).json({ message: `Connection request sent successfully!`, data: responseData })
+    } catch (err) {
+        res.status(500).json({ message: `Something went wrong: ${err}` })
+    }
+})
+
+// Withdraw Connection Request
+requestRouter.post('/api/requests/withdraw/:id', tokenAuth, blockListCheck, async (req, res) => {
+    try {
+        const status = "withdraw"
+        const userId = req.userObj._id
+        const { id } = req.params
+
+        // Check if connection request exists
+        const searchResult = await Connection.findOne({
+            senderId: userId, receiverId: id, status: "interested"
+        }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA)
+
+        if (!searchResult) {
+            return res.status(403).json({ message: `Connection does not exist!` })
+        }
+
+        const responseData = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: status }
+        await searchResult.deleteOne()
+        return res.status(200).json({ message: `Connection request withdrawn!`, data: responseData })
     } catch (err) {
         res.status(500).json({ message: `Something went wrong: ${err}` })
     }

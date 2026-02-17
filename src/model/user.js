@@ -26,6 +26,8 @@ const userSchema = new mongoose.Schema({
             }
         }
     },
+    about: { type: String, max: 60, trim: true },
+    description: { type: String, max: 200, trim: true },
     age: { type: Number, min: 18, trim: true },
     gender: {
         type: String, lowercase: true, enum: {
