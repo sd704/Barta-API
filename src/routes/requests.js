@@ -37,7 +37,8 @@ requestRouter.post('/api/requests/interested/:id', tokenAuth, blockListCheck, as
         const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
         return res.status(200).json({ message: `Connection request sent successfully!`, data: responseData })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -61,7 +62,8 @@ requestRouter.post('/api/requests/withdraw/:id', tokenAuth, blockListCheck, asyn
         await searchResult.deleteOne()
         return res.status(200).json({ message: `Connection request withdrawn!`, data: responseData })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -90,7 +92,8 @@ requestRouter.post('/api/requests/ignored/:id', tokenAuth, blockListCheck, async
         const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
         return res.status(200).json({ message: `Connection status set successfully!`, data: responseData })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -120,7 +123,8 @@ requestRouter.post('/api/requests/accepted/:id', tokenAuth, blockListCheck, asyn
             return res.status(403).json({ message: `Connection does not exist!` })
         }
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -148,7 +152,8 @@ requestRouter.post('/api/requests/rejected/:id', tokenAuth, blockListCheck, asyn
         return res.status(200).json({ message: `Connection request rejected!`, data: responseData })
 
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -172,7 +177,8 @@ requestRouter.post('/api/requests/remove/:id', tokenAuth, blockListCheck, async 
         await searchResult.deleteOne()
         return res.status(200).json({ message: `Connection removed successfully!`, data: responseData })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -195,7 +201,8 @@ requestRouter.post('/api/requests/blocked/:id', tokenAuth, async (req, res) => {
         const savedObj = await blockRequest.save()
         return res.status(200).json({ message: `User blocked successfully!` })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -215,7 +222,8 @@ requestRouter.post('/api/requests/unblocked/:id', tokenAuth, async (req, res) =>
         }
         return res.status(403).json({ message: `User not in blocklist!` })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 

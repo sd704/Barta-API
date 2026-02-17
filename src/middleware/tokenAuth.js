@@ -27,7 +27,8 @@ const tokenAuth = async (req, res, next) => {
         req.userObj = userObj // Passing the data with request object
         next()
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 }
 

@@ -31,7 +31,8 @@ const blockListCheck = async (req, res, next) => {
         }
         next()
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 }
 

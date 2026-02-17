@@ -10,7 +10,8 @@ userRouter.get('/api/user', tokenAuth, async (req, res) => {
     try {
         res.status(200).json({ message: `Loggedin user data`, data: req.userObj.filterSafeData() })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -28,7 +29,8 @@ userRouter.post('/api/user', async (req, res) => {
         const token = await user.getJWT()
         res.status(200).cookie("token", token).json({ message: `User data saved successfully`, data: savedUser.filterSafeData() })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -52,7 +54,8 @@ userRouter.patch('/api/user', tokenAuth, async (req, res) => {
         const updatedUserData = await req.userObj.save()
         res.status(200).json({ message: `User data updated successfully`, data: updatedUserData.filterSafeData(), updatedFields: updates })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -63,7 +66,8 @@ userRouter.delete('/api/user', tokenAuth, async (req, res) => {
         await req.userObj.deleteOne()
         res.status(200).cookie("token", null, { expires: new Date(Date.now()) }).json({ message: `User deleted successfully`, data: deletedUser })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 

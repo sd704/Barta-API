@@ -33,7 +33,7 @@ searchRouter.get('/api/search/username/:username', tokenAuth, pagination, getBlo
                     { $expr: { $regexMatch: { input: { $concat: ['$firstName', ' ', '$lastName'] }, regex: searchText } } }
                 ]
             }]
-        }).select(SAFE_DATA).skip(req.skip).limit(req.limit).sort({ firstName: 1 })
+        }).select(SAFE_DATA).skip(req.skip).limit(req.limit).sort({ firstName: 1 }).lean()
 
         // $or -> Performs a logical OR operation on an array of one or more expressions and selects documents that satisfy at least one of the expressions.
         // $expr -> Allows the use of expressions within a query predicate.
@@ -41,7 +41,8 @@ searchRouter.get('/api/search/username/:username', tokenAuth, pagination, getBlo
 
         res.status(200).json({ message: `Search Complete`, data: users })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -63,7 +64,8 @@ searchRouter.get('/api/search/email/:email', tokenAuth, async (req, res) => {
 
         res.status(200).json({ message: `User found successfully`, data: result.filterSafeData() })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -90,7 +92,8 @@ searchRouter.get('/api/search/id/:id', tokenAuth, async (req, res) => {
 
         res.status(200).json({ message: `User found successfully`, data: result.filterSafeData() })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 

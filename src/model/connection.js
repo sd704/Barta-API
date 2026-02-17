@@ -15,11 +15,15 @@ const connectionSchema = new mongoose.Schema({
         type: String, lowercase: true, enum: {
             values: ["accepted", "rejected", "interested", "ignored"],
             message: `Invalid request type: {VALUE}`
-        }
+        },
+        required: true
     }
 }, {
     timestamps: true
 })
+
+// Prevent duplicate same-direction requests
+connectionSchema.index({ senderId: 1, receiverId: 1 }, { unique: true })
 
 // This function executes before model.save()
 connectionSchema.pre("save", async function () {

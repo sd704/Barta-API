@@ -20,7 +20,8 @@ authRouter.post('/api/auth/login', async (req, res) => {
         const token = await userObj.getJWT()
         res.status(200).cookie("token", token).json({ message: `Login Successful!`, data: userObj.filterSafeData() })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -28,7 +29,8 @@ authRouter.post('/api/auth/logout', async (req, res) => {
     try {
         res.status(200).cookie("token", null, { expires: new Date(Date.now()) }).json({ message: `Logout Successful!` })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 

@@ -15,12 +15,15 @@ connectionRouter.get('/api/connections/interested', tokenAuth, pagination, getBl
         const userBlockList = req.userBlockList
 
         const searchResult = await Connection.find({
-            $and: [{ receiverId: userId, status: "interested" }, { senderId: { $nin: userBlockList } }]
-        }).select("senderId").populate("senderId", SAFE_DATA).skip(req.skip).limit(req.limit)
-        const responseObj = searchResult.map((item) => item.senderId)
+            receiverId: userId, status: "interested", senderId: { $nin: userBlockList }
+        }).select("senderId").populate("senderId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
+
+        // There can be a 'null' case, a user send a request, but the user does not exist anymore -> filter
+        const responseObj = searchResult.filter(item => item.senderId).map(item => item.senderId)
         return res.status(200).json({ message: `List of connection requests received`, data: responseObj })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -31,12 +34,13 @@ connectionRouter.get('/api/connections/sent', tokenAuth, pagination, getBlockLis
         const userBlockList = req.userBlockList
 
         const searchResult = await Connection.find({
-            $and: [{ senderId: userId, status: "interested" }, { receiverId: { $nin: userBlockList } }]
-        }).select("receiverId").populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit)
-        const responseObj = searchResult.map((item) => item.receiverId)
+            senderId: userId, status: "interested", receiverId: { $nin: userBlockList }
+        }).select("receiverId").populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
+        const responseObj = searchResult.filter(item => item.receiverId).map(item => item.receiverId)
         return res.status(200).json({ message: `List of connection requests sent`, data: responseObj })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -48,11 +52,12 @@ connectionRouter.get('/api/connections/accepted', tokenAuth, pagination, getBloc
 
         const searchResult = await Connection.find({
             $or: [{ senderId: userId, receiverId: { $nin: userBlockList }, status: "accepted" }, { senderId: { $nin: userBlockList }, receiverId: userId, status: "accepted" }]
-        }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit)
-        const responseObj = searchResult.map((item) => (item.senderId._id.toString() === userId.toString()) ? item.receiverId : item.senderId)
+        }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
+        const responseObj = searchResult.filter(item => item.senderId && item.receiverId).map(item => item.senderId._id.toString() === userId.toString() ? item.receiverId : item.senderId)
         return res.status(200).json({ message: `List of connected users`, data: responseObj })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -74,12 +79,13 @@ connectionRouter.get('/api/connections/feed', tokenAuth, pagination, getBlockLis
 
         // Search users where ID -> Not In Array
         const searchResult = await User.find({
-            $and: [{ _id: { $nin: Array.from(hiddenUsers) } }, { _id: { $nin: userBlockList } }]
-        }).select(SAFE_DATA).skip(req.skip).limit(req.limit)
+            _id: { $nin: [...hiddenUsers, ...userBlockList] }
+        }).select(SAFE_DATA).skip(req.skip).limit(req.limit).lean()
 
         return res.status(200).json({ message: `List of connection suggestions`, data: searchResult })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
@@ -89,11 +95,12 @@ connectionRouter.get('/api/connections/blocked', tokenAuth, pagination, async (r
         const userId = req.userObj._id
         const searchResult = await BlockList.find({
             senderId: userId
-        }).select("receiverId").populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit)
-        const responseObj = searchResult.map((item) => item.receiverId)
+        }).select("receiverId").populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
+        const responseObj = searchResult.filter(item => item.receiverId).map(item => item.receiverId)
         return res.status(200).json({ message: `List of blocked users`, data: responseObj })
     } catch (err) {
-        res.status(500).json({ message: `Something went wrong: ${err}` })
+        console.error(`Error: ${err}`)
+        res.status(500).json({ message: `Interval server error!` })
     }
 })
 
