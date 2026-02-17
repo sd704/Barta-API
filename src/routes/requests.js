@@ -152,6 +152,30 @@ requestRouter.post('/api/requests/rejected/:id', tokenAuth, blockListCheck, asyn
     }
 })
 
+// Remove Connection
+requestRouter.post('/api/requests/remove/:id', tokenAuth, blockListCheck, async (req, res) => {
+    try {
+        const status = "remove"
+        const userId = req.userObj._id
+        const { id } = req.params
+
+        // Check if connection exists either way
+        const searchResult = await Connection.findOne({
+            $or: [{ senderId: userId, receiverId: id, status: "accepted" }, { senderId: id, receiverId: userId, status: "accepted" }]
+        }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA)
+
+        if (!searchResult) {
+            return res.status(403).json({ message: `Connection does not exists!` })
+        }
+
+        const responseData = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: status }
+        await searchResult.deleteOne()
+        return res.status(200).json({ message: `Connection removed successfully!`, data: responseData })
+    } catch (err) {
+        res.status(500).json({ message: `Something went wrong: ${err}` })
+    }
+})
+
 // Block User, Blocked users cannot see the blockers profile/posts, and cannot send requests
 requestRouter.post('/api/requests/blocked/:id', tokenAuth, async (req, res) => {
     try {
