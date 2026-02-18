@@ -23,7 +23,7 @@ connectionRouter.get('/api/connections/interested', tokenAuth, pagination, getBl
         return res.status(200).json({ message: `List of connection requests received`, data: responseObj })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -40,7 +40,7 @@ connectionRouter.get('/api/connections/sent', tokenAuth, pagination, getBlockLis
         return res.status(200).json({ message: `List of connection requests sent`, data: responseObj })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -57,7 +57,7 @@ connectionRouter.get('/api/connections/accepted', tokenAuth, pagination, getBloc
         return res.status(200).json({ message: `List of connected users`, data: responseObj })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -85,7 +85,7 @@ connectionRouter.get('/api/connections/feed', tokenAuth, pagination, getBlockLis
         return res.status(200).json({ message: `List of connection suggestions`, data: searchResult })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -100,7 +100,7 @@ connectionRouter.get('/api/connections/blocked', tokenAuth, pagination, async (r
         return res.status(200).json({ message: `List of blocked users`, data: responseObj })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 

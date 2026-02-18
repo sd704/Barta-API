@@ -11,7 +11,7 @@ const getBlockList = async (req, res, next) => {
         next()
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 }
 

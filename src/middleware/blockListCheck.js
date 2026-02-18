@@ -13,26 +13,30 @@ const blockListCheck = async (req, res, next) => {
         }
 
         // Validate Receiver ID
-        const obj = await User.findById(id)
-        if (!obj) {
+        // const obj = await User.findById(id)
+        const targetUser = await User.exists({ _id: id }) // lighter than findById
+        if (!targetUser) {
             return res.status(403).json({ message: `User not found!` })
         }
 
-        // Check if User is Blocked
-        const searchResult = await BlockList.findOne({ senderId: id, receiverId: userId })
-        if (searchResult) {
-            return res.status(403).json({ message: `User not found!` })
-        }
+        // Check if User is Blocked or User blocked Receiver
+        const searchResult = await BlockList.findOne({
+            $or: [
+                { senderId: id, receiverId: userId },
+                { senderId: userId, receiverId: id }
+            ]
+        })
 
-        // Check if User blocked Receiver
-        const searchResult2 = await BlockList.findOne({ senderId: userId, receiverId: id })
-        if (searchResult2) {
+        if (searchResult && searchResult.senderId.equals(userId)) {
             return res.status(403).json({ message: `Un-block user to send any request!` })
+        } else if (searchResult) {
+            return res.status(404).json({ message: `User not found!` })
         }
+
         next()
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 }
 

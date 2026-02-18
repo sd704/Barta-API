@@ -21,7 +21,7 @@ authRouter.post('/api/auth/login', async (req, res) => {
         res.status(200).cookie("token", token).json({ message: `Login Successful!`, data: userObj.filterSafeData() })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -30,7 +30,7 @@ authRouter.post('/api/auth/logout', async (req, res) => {
         res.status(200).cookie("token", null, { expires: new Date(Date.now()) }).json({ message: `Logout Successful!` })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 

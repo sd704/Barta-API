@@ -15,10 +15,14 @@ const blockListSchema = new mongoose.Schema({
     timestamps: true
 })
 
+blockListSchema.index(
+    { senderId: 1, receiverId: 1 },
+    { unique: true }
+)
+
 // This function executes before model.save()
-blockListSchema.pre("save", async function () {
-    const blockRequest = this
-    if (blockRequest.senderId.equals(blockRequest.receiverId)) {
+blockListSchema.pre("validate", async function () {
+    if (this.senderId.equals(this.receiverId)) {
         throw new Error("Sender and Receiver is same!")
     }
 })

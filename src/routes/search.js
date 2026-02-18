@@ -42,7 +42,7 @@ searchRouter.get('/api/search/username/:username', tokenAuth, pagination, getBlo
         res.status(200).json({ message: `Search Complete`, data: users })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -65,7 +65,7 @@ searchRouter.get('/api/search/email/:email', tokenAuth, async (req, res) => {
         res.status(200).json({ message: `User found successfully`, data: result.filterSafeData() })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
@@ -93,7 +93,7 @@ searchRouter.get('/api/search/id/:id', tokenAuth, async (req, res) => {
         res.status(200).json({ message: `User found successfully`, data: result.filterSafeData() })
     } catch (err) {
         console.error(`Error: ${err}`)
-        res.status(500).json({ message: `Interval server error!` })
+        res.status(500).json({ message: `Internal server error!` })
     }
 })
 
