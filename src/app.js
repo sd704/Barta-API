@@ -4,7 +4,7 @@ const { connectDB } = require("./config/database")
 const authRouter = require('./routes/auth')
 const userRouter = require('./routes/profile')
 const connectionRouter = require('./routes/connection')
-const requestRouter = require('./routes/requests')
+const requestRouter = require('./routes/requestRouter')
 const searchRouter = require('./routes/search')
 const cors = require('cors')
 

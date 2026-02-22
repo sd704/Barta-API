@@ -6,6 +6,9 @@ const { SAFE_DATA, CONNECTION_SAFE_DATA } = require("../utils/constant")
 const express = require('express')
 const requestRouter = express.Router()
 
+const formatResponse = (doc) => ({ sender: doc.senderId, receiver: doc.receiverId, status: doc.status, createdAt: doc.createdAt })
+const formatResponse2 = (doc, status) => ({ sender: doc.senderId, receiver: doc.receiverId, status: status })
+
 // Send Connection Request
 requestRouter.post('/api/requests/interested/:id', tokenAuth, blockListCheck, async (req, res) => {
     try {
@@ -20,8 +23,7 @@ requestRouter.post('/api/requests/interested/:id', tokenAuth, blockListCheck, as
 
         if (searchResult) {
             if (['accepted', 'interested'].includes(searchResult.status)) {
-                const response = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: searchResult.status, createdAt: searchResult.createdAt }
-                return res.status(403).json({ message: `Connection already exists!`, data: response })
+                return res.status(403).json({ message: `Connection already exists!`, data: formatResponse(searchResult) })
             } else {
                 // We let ignored and rejected users to send request again :)
                 // We delete the old connection request (ignored/rejected)
@@ -34,8 +36,7 @@ requestRouter.post('/api/requests/interested/:id', tokenAuth, blockListCheck, as
         const savedObj = await connectionRequest.save()
         await savedObj.populate("senderId", SAFE_DATA)
         await savedObj.populate("receiverId", SAFE_DATA)
-        const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
-        return res.status(200).json({ message: `Connection request sent successfully!`, data: responseData })
+        return res.status(200).json({ message: `Connection request sent successfully!`, data: formatResponse(savedObj) })
     } catch (err) {
         console.error(`Error: ${err}`)
         res.status(500).json({ message: `Internal server error!` })
@@ -58,7 +59,8 @@ requestRouter.post('/api/requests/withdraw/:id', tokenAuth, blockListCheck, asyn
             return res.status(403).json({ message: `Connection does not exist!` })
         }
 
-        const responseData = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: status }
+        // const responseData = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: status }
+        const responseData = formatResponse2(searchResult, status)
         await searchResult.deleteOne()
         return res.status(200).json({ message: `Connection request withdrawn!`, data: responseData })
     } catch (err) {
@@ -80,8 +82,7 @@ requestRouter.post('/api/requests/ignored/:id', tokenAuth, blockListCheck, async
         }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA)
 
         if (searchResult) {
-            const response = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: searchResult.status, createdAt: searchResult.createdAt }
-            return res.status(403).json({ message: `Connection already exists!`, data: response })
+            return res.status(403).json({ message: `Connection already exists!`, data: formatResponse(searchResult) })
         }
 
         const connectionObj = { senderId: userId, receiverId: id, status }
@@ -89,8 +90,7 @@ requestRouter.post('/api/requests/ignored/:id', tokenAuth, blockListCheck, async
         const savedObj = await connectionRequest.save()
         await savedObj.populate("senderId", SAFE_DATA)
         await savedObj.populate("receiverId", SAFE_DATA)
-        const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
-        return res.status(200).json({ message: `Connection status set successfully!`, data: responseData })
+        return res.status(200).json({ message: `Connection status set successfully!`, data: formatResponse(savedObj) })
     } catch (err) {
         console.error(`Error: ${err}`)
         res.status(500).json({ message: `Internal server error!` })
@@ -114,11 +114,9 @@ requestRouter.post('/api/requests/accepted/:id', tokenAuth, blockListCheck, asyn
             const savedObj = await searchResult.save()
             await savedObj.populate("senderId", SAFE_DATA)
             await savedObj.populate("receiverId", SAFE_DATA)
-            const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
-            return res.status(200).json({ message: `Connection request accepted!`, data: responseData })
+            return res.status(200).json({ message: `Connection request accepted!`, data: formatResponse(savedObj) })
         } else if (searchResult && searchResult.status === status) {
-            const response = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: searchResult.status, createdAt: searchResult.createdAt }
-            return res.status(403).json({ message: `Connection request already accepted!`, data: response })
+            return res.status(403).json({ message: `Connection request already accepted!`, data: formatResponse(searchResult) })
         } else {
             return res.status(403).json({ message: `Connection does not exist!` })
         }
@@ -138,7 +136,7 @@ requestRouter.post('/api/requests/rejected/:id', tokenAuth, blockListCheck, asyn
         // Check if connection request exists
         const searchResult = await Connection.findOne({
             senderId: id, receiverId: userId, status: "interested"
-        }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA)
+        })
 
         if (!searchResult) {
             return res.status(403).json({ message: `Connection does not exist!` })
@@ -148,8 +146,7 @@ requestRouter.post('/api/requests/rejected/:id', tokenAuth, blockListCheck, asyn
         const savedObj = await searchResult.save()
         await savedObj.populate("senderId", SAFE_DATA)
         await savedObj.populate("receiverId", SAFE_DATA)
-        const responseData = { sender: savedObj.senderId, receiver: savedObj.receiverId, status: savedObj.status, createdAt: savedObj.createdAt }
-        return res.status(200).json({ message: `Connection request rejected!`, data: responseData })
+        return res.status(200).json({ message: `Connection request rejected!`, data: formatResponse(savedObj) })
 
     } catch (err) {
         console.error(`Error: ${err}`)
@@ -173,7 +170,8 @@ requestRouter.post('/api/requests/remove/:id', tokenAuth, blockListCheck, async 
             return res.status(403).json({ message: `Connection does not exists!` })
         }
 
-        const responseData = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: status }
+        // const responseData = { sender: searchResult.senderId, receiver: searchResult.receiverId, status: status }
+        const responseData = formatResponse2(searchResult, status)
         await searchResult.deleteOne()
         return res.status(200).json({ message: `Connection removed successfully!`, data: responseData })
     } catch (err) {
