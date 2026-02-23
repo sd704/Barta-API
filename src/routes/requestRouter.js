@@ -14,31 +14,36 @@ const {
 const express = require('express')
 const requestRouter = express.Router()
 
-// It automatically wraps async route so errors go to Express error middleware.
-const errorHandler = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)
+// Middleware
+const idSimilarityCheck = async (req, res, next) => {
+    if (req.userObj._id.equals(req.params.id)) {
+        return res.status(400).json({ message: "Sender and receiver cannot be the same!" });
+    }
+    next()
+}
 
 // interested -> Send Connection request
-requestRouter.post('/api/request/:id/interested', tokenAuth, blockListCheck, errorHandler(sendConnectRequest))
+requestRouter.post('/api/requests/:id/interested', tokenAuth, blockListCheck, idSimilarityCheck, sendConnectRequest)
 
 // ignored -> Ignore Profile
-requestRouter.post('/api/request/:id/ignored', tokenAuth, blockListCheck, errorHandler(ignoreRequest))
+requestRouter.post('/api/requests/:id/ignored', tokenAuth, blockListCheck, idSimilarityCheck, ignoreRequest)
 
 // accepted -> Accept Connection Request
-requestRouter.patch('/api/request/:id/accepted', tokenAuth, blockListCheck, errorHandler(acceptRequest))
+requestRouter.patch('/api/requests/:id/accepted', tokenAuth, blockListCheck, idSimilarityCheck, acceptRequest)
 
 // rejected -> Reject Connection Request
-requestRouter.patch('/api/request/:id/rejected', tokenAuth, blockListCheck, errorHandler(rejectRequest))
+requestRouter.patch('/api/requests/:id/rejected', tokenAuth, blockListCheck, idSimilarityCheck, rejectRequest)
 
 // withdraw -> Withdraw Connection Request
-requestRouter.delete('/api/request/:id/withdraw', tokenAuth, blockListCheck, errorHandler(withdrawRequest))
+requestRouter.delete('/api/requests/:id/withdraw', tokenAuth, blockListCheck, idSimilarityCheck, withdrawRequest)
 
 // remove -> Remove Connection
-requestRouter.delete('/api/request/:id/remove', tokenAuth, blockListCheck, errorHandler(removeRequest))
+requestRouter.delete('/api/requests/:id/remove', tokenAuth, blockListCheck, idSimilarityCheck, removeRequest)
 
 // blocked -> Block User, Blocked users cannot see the blockers profile/posts, and cannot send requests
-requestRouter.post('/api/block/:id', tokenAuth, errorHandler(blockRequest))
+requestRouter.post('/api/blocks/:id', tokenAuth, idSimilarityCheck, blockRequest)
 
 // unblock -> Un-Block User
-requestRouter.delete('/api/block/:id', tokenAuth, errorHandler(unblockRequest))
+requestRouter.delete('/api/blocks/:id', tokenAuth, idSimilarityCheck, unblockRequest)
 
 module.exports = requestRouter 

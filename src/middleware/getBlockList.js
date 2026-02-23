@@ -3,8 +3,10 @@ const { BlockList } = require("../model/blocklist")
 const getBlockList = async (req, res, next) => {
     try {
         const userId = req.userObj._id
-        const searchResult = await BlockList.find({ receiverId: userId }).select("senderId")
-        const userBlockList = searchResult.map((item) => item.senderId)
+        const searchResult = await BlockList.find({
+            $or: [{ senderId: userId }, { receiverId: userId }]
+        }).select("senderId receiverId")
+        const userBlockList = searchResult.map(doc => doc.senderId.equals(userId) ? doc.receiverId : doc.senderId)
 
         // Users who have blocked lockedIn User
         req.userBlockList = userBlockList

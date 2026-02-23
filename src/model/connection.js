@@ -19,25 +19,20 @@ const connectionSchema = new mongoose.Schema({
         required: true
     },
     participants: {
-        type: [mongoose.Schema.Types.ObjectId],
-        validate(value) {
-            if (value.length !== 2) {
-                throw new Error("Participants must contain exactly 2 users")
-            }
-        }
+        type: String,
+        unique: true
     }
 }, {
     timestamps: true
 })
 
-// Direction is preserved, Uniqueness is enforced, Reverse duplicates impossible
-connectionSchema.index({ participants: 1 }, { unique: true })
-
 // Performance indexes
+connectionSchema.index({ receiverId: 1, senderId: 1 })
 connectionSchema.index({ senderId: 1, status: 1 })
 connectionSchema.index({ receiverId: 1, status: 1 })
 
 // This function executes before model.save()
+// Will not work for updates, upsert
 connectionSchema.pre("validate", function () {
 
     // Sender and Receiver same user check
@@ -47,7 +42,7 @@ connectionSchema.pre("validate", function () {
 
     // Normalize + Sort
     const sorted = [this.senderId.toString(), this.receiverId.toString()].sort()
-    this.participants = sorted.map(id => new mongoose.Types.ObjectId(id))
+    this.participants = sorted.join('|')
 })
 
 const Connection = mongoose.model('Connection', connectionSchema)

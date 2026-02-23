@@ -1,3 +1,4 @@
 node_modules
 .env
 src/utils/userData.txt
+src/utils/dummyUsers.txt

@@ -1,11 +1,11 @@
 const express = require("express")
 const cookieParser = require('cookie-parser')
 const { connectDB } = require("./config/database")
-const authRouter = require('./routes/auth')
-const userRouter = require('./routes/profile')
-const connectionRouter = require('./routes/connection')
+const authRouter = require('./routes/authRouter')
+const userRouter = require('./routes/userRouter')
+const connectionRouter = require('./routes/connectionRouter')
 const requestRouter = require('./routes/requestRouter')
-const searchRouter = require('./routes/search')
+const searchRouter = require('./routes/searchRouter')
 const cors = require('cors')
 
 // Express App
@@ -32,7 +32,8 @@ app.use('/', (req, res, next) => {
 });
 
 // This order is important err,req,res,next. This will handle all routes.
-app.use("/", (err, req, res, next) => {
+// Global error middleware should NOT have a path
+app.use((err, req, res, next) => {
     console.error(`Error: ${err}`)
     res.status(500).json({ message: `Internal server error!` })
 })

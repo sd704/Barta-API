@@ -11,7 +11,7 @@ const formatResponse2 = (doc, status) => ({ sender: doc.senderId, receiver: doc.
 
 const sendConnectRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
-    const participants = [userId.toString(), targetUserId.toString()].sort()
+    const participants = [userId.toString(), targetUserId.toString()].sort().join('|')
 
     // Check if connection exists either way
     const existing = await Connection.findOne({ participants, status: { $in: ['accepted', 'interested'] } })
@@ -38,7 +38,7 @@ const sendConnectRequest = async (req, res, next) => {
 
 const ignoreRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
-    const participants = [userId.toString(), targetUserId.toString()].sort()
+    const participants = [userId.toString(), targetUserId.toString()].sort().join('|')
 
     // Check if connection exists either way
     const searchResult = await Connection.findOne({ participants })
@@ -122,7 +122,7 @@ const withdrawRequest = async (req, res, next) => {
 
 const removeRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
-    const participants = [userId.toString(), targetUserId.toString()].sort()
+    const participants = [userId.toString(), targetUserId.toString()].sort().join('|')
 
     const removed = await Connection.findOneAndDelete({ participants, status: "accepted" })
 
