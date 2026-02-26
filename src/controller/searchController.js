@@ -1,5 +1,6 @@
 const { User } = require("../model/user")
 const { BlockList } = require("../model/blocklist")
+const { Connection } = require("../model/connection")
 const { SAFE_DATA } = require("../utils/constant")
 const mongoose = require('mongoose')
 
@@ -44,7 +45,7 @@ const findUserByEmail = async (req, res, next) => {
 
     // BlockList Check
     const userId = req.userObj._id
-    const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId })
+    const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId }).lean()
     if (searchResult) {
         return res.status(403).json({ message: `User with email ${email} not found!` })
     }
@@ -53,30 +54,38 @@ const findUserByEmail = async (req, res, next) => {
 }
 
 const findUserById = async (req, res, next) => {
+    const userId = req.userObj._id
     const { id } = req.query
 
-    if (!id) {
-        return res.status(400).json({ message: 'Search query "id" required!' })
-    }
+    if (!id) { return res.status(400).json({ message: 'Search query "id" required!' }) }
+    if (userId.toString() === id) { return res.status(400).json({ message: "Invalid request" }) }
 
     // Validate ObjectId format first
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(404).json({ message: `User not found!` })
-    }
+    if (!mongoose.Types.ObjectId.isValid(id)) { return res.status(404).json({ message: `User not found!` }) }
 
     const result = await User.findById(id)
-    if (!result) {
-        return res.status(404).json({ message: `User not found!` })
-    }
+    if (!result) { return res.status(404).json({ message: `User not found!` }) }
 
     // BlockList Check
-    const userId = req.userObj._id
-    const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId })
-    if (searchResult) {
-        return res.status(403).json({ message: `User not found!` })
+    const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId }).lean()
+    if (searchResult) { return res.status(403).json({ message: `User not found!` }) }
+
+    let data = result.filterSafeData()
+
+    // Attaching connection status
+    const participants = [userId.toString(), id].sort().join('|')
+    const existing = await Connection.findOne({ participants }).lean()
+    data = {
+        ...data, connectionData: existing ? {
+            senderId: existing.senderId,
+            receiverId: existing.receiverId,
+            status: existing.status
+        } : {
+            status: ""
+        }
     }
 
-    res.status(200).json({ message: `User found successfully`, data: result.filterSafeData() })
+    res.status(200).json({ message: `User found successfully`, data })
 }
 
 module.exports = { findUsersByName, findUserByEmail, findUserById }

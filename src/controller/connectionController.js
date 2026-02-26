@@ -53,6 +53,8 @@ const suggestedUsers = async (req, res, next) => {
         hiddenUsers.add(item.receiverId.toString())
     })
 
+    hiddenUsers.add(userId.toString())
+
     // Search users where ID -> Not In Array
     const searchResult = await User.find({
         _id: { $nin: [...hiddenUsers, ...userBlockList] }

@@ -14,6 +14,7 @@ searchRouter.get('/api/search/username', tokenAuth, pagination, getBlockList, fi
 searchRouter.get('/api/search/email', tokenAuth, findUserByEmail)
 
 // /api/search/id?id=685346828
+// Gets user data and connection status with logged in user
 searchRouter.get('/api/search/id', tokenAuth, findUserById)
 
 module.exports = searchRouter 

@@ -12,22 +12,27 @@ const tokenAuth = async (req, res, next) => {
 
         const { _id } = await jwt.verify(token, JWTKEY)
         if (!_id) {
-            return res.status(404).json({ message: `Invalid Token!` })
+            return res.status(401).json({ message: `Invalid Token!` })
         }
 
         // Validate ObjectId format first
         if (!mongoose.Types.ObjectId.isValid(_id)) {
-            return res.status(404).json({ message: `Invalid Credential!` })
+            return res.status(401).json({ message: `Invalid Credential!` })
         }
 
         const userObj = await User.findById(_id)
         if (!userObj) {
-            return res.status(404).json({ message: `Invalid Credential!` })
+            return res.status(401).json({ message: `Invalid Credential!` })
         }
         req.userObj = userObj // Passing the data with request object
         next()
     } catch (err) {
         console.error(`Error: ${err}`)
+
+        if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+            return res.status(401).json({ message: 'Invalid Token!' })
+        }
+
         res.status(500).json({ message: `Internal server error!` })
     }
 }

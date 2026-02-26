@@ -7,14 +7,14 @@ const getLoggedInUser = async (req, res, next) => {
 }
 
 const signupUser = async (req, res, next) => {
-    const { firstName, lastName, email, password, age, gender, about, description } = req.body
+    const { firstName, lastName, email, password, age, gender, about, description, pfp } = req.body
 
     if (!email || !password) {
         return res.status(400).json({ message: "Email and password required" })
     }
 
     const passwordHash = await bcrypt.hash(password, 10)
-    const userObj = { firstName, lastName, email, password: passwordHash, age, gender, about, description }
+    const userObj = { firstName, lastName, email, password: passwordHash, age, gender, about, description, pfp }
 
     // Creating a new instance of User model
     const user = new User(userObj)
