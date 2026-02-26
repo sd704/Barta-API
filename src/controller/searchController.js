@@ -74,14 +74,18 @@ const findUserById = async (req, res, next) => {
 
     // Attaching connection status
     const participants = [userId.toString(), id].sort().join('|')
-    const existing = await Connection.findOne({ participants }).lean()
+
+    // Run Parallel
+    const [existing, blocked] = await Promise.all([
+        Connection.findOne({ participants }).lean(),
+        BlockList.findOne({ senderId: userId, receiverId: id }).lean()
+    ])
+
     data = {
         ...data, connectionData: existing ? {
-            senderId: existing.senderId,
-            receiverId: existing.receiverId,
-            status: existing.status
+            senderId: existing.senderId, receiverId: existing.receiverId, status: existing.status, isBlocked: !!blocked
         } : {
-            status: ""
+            status: "", isBlocked: !!blocked
         }
     }
 

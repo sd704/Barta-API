@@ -2,6 +2,7 @@ const { User } = require("../model/user")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
+const mongoose = require('mongoose')
 
 const receivedRequests = async (req, res, next) => {
     const userId = req.userObj._id
@@ -72,4 +73,30 @@ const blockedUsers = async (req, res, next) => {
     return res.status(200).json({ message: `List of blocked users`, data: responseObj })
 }
 
-module.exports = { receivedRequests, sentRequests, existingConnections, suggestedUsers, blockedUsers }
+const getConnectionStatus = async (req, res, next) => {
+    const userId = req.userObj._id
+    const targetUserId = req.params.id
+
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) { return res.status(404).json({ message: `User not found!` }) }
+
+    const targetUser = await User.exists({ _id: targetUserId }) // lighter than findById
+    if (!targetUser) { return res.status(404).json({ message: `User not found!` }) }
+
+    const participants = [userId.toString(), targetUserId].sort().join('|')
+
+    // Run Parallel
+    const [existing, blocked] = await Promise.all([
+        Connection.findOne({ participants }).lean(),
+        BlockList.findOne({ senderId: userId, receiverId: targetUserId }).lean()
+    ])
+
+    const data = existing ? {
+        senderId: existing.senderId, receiverId: existing.receiverId, status: existing.status, isBlocked: !!blocked
+    } : {
+        status: "", isBlocked: !!blocked
+    }
+
+    res.status(200).json({ message: `Connection Details`, data })
+}
+
+module.exports = { receivedRequests, sentRequests, existingConnections, suggestedUsers, blockedUsers, getConnectionStatus }

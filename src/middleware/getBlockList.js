@@ -8,7 +8,7 @@ const getBlockList = async (req, res, next) => {
         }).select("senderId receiverId")
         const userBlockList = searchResult.map(doc => doc.senderId.equals(userId) ? doc.receiverId : doc.senderId)
 
-        // Users who have blocked lockedIn User
+        // Users who have blocked loggedIn User, and users who are blocked by loggedIn User
         req.userBlockList = userBlockList
         next()
     } catch (err) {
