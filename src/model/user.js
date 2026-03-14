@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema({
             message: `Invalid gender: {VALUE}`
         }
     },
-    pfp: { type: String, default: "https://icon-library.com/images/no-user-image-icon/no-user-image-icon-29.jpg", trim: true }
+    pfp: { type: String, trim: true }
 }, {
     timestamps: true
 })

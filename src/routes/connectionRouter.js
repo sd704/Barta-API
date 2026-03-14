@@ -21,7 +21,7 @@ connectionRouter.get('/api/connections/feed', tokenAuth, pagination, getBlockLis
 // List of blocked users
 connectionRouter.get('/api/connections/blocked', tokenAuth, pagination, blockedUsers)
 
-// Get Connection details and also Blocked details
+// Get Connection details and Blocked details
 connectionRouter.get('/api/connections/status/:id', tokenAuth, getConnectionStatus)
 
 module.exports = connectionRouter
