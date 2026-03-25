@@ -3,7 +3,7 @@ const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
 
 // Helper Functions
-const getUserAndTarget = (req) => ({ userId: req.userObj._id, targetUserId: req.params.id })
+const getUserAndTarget = (req) => ({ userId: req.userObj._id, targetUserId: req.params.uid })
 const formatResponse = (doc) => ({ sender: doc.senderId, receiver: doc.receiverId, status: doc.status, createdAt: doc.createdAt })
 const formatResponse2 = (doc, status) => ({ sender: doc.senderId, receiver: doc.receiverId, status: status })
 

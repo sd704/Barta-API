@@ -1,6 +1,7 @@
 const { tokenAuth } = require("../middleware/tokenAuth")
 const { pagination } = require('../middleware/pagination')
 const { getBlockList } = require("../middleware/getBlockList")
+const { userIdValidation } = require("../middleware/userIdValidation")
 const { receivedRequests, sentRequests, existingConnections, suggestedUsers, blockedUsers, getConnectionStatus } = require("../controller/connectionController")
 
 const express = require('express')
@@ -22,7 +23,7 @@ connectionRouter.get('/api/connections/feed', tokenAuth, pagination, getBlockLis
 connectionRouter.get('/api/connections/blocked', tokenAuth, pagination, blockedUsers)
 
 // Get Connection details and Blocked details
-connectionRouter.get('/api/connections/status/:id', tokenAuth, getConnectionStatus)
+connectionRouter.get('/api/connections/status/:uid', tokenAuth, userIdValidation, getConnectionStatus)
 
 module.exports = connectionRouter
 

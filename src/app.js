@@ -6,7 +6,10 @@ const userRouter = require('./routes/userRouter')
 const connectionRouter = require('./routes/connectionRouter')
 const requestRouter = require('./routes/requestRouter')
 const searchRouter = require('./routes/searchRouter')
+const chatRouter = require('./routes/chatRouter')
 const cors = require('cors')
+const http = require('http')
+const { initializeSocket } = require('./config/socket')
 
 // Express App
 const app = express()
@@ -25,6 +28,7 @@ app.use('/', userRouter)
 app.use('/', searchRouter)
 app.use('/', requestRouter)
 app.use('/', connectionRouter)
+app.use('/', chatRouter)
 
 // The 404 catch-all (after all routes)
 app.use('/', (req, res, next) => {
@@ -38,12 +42,16 @@ app.use((err, req, res, next) => {
     res.status(500).json({ message: `Internal server error!` })
 })
 
+const server = http.createServer(app)
+
+initializeSocket(server)
+
 connectDB().then(() => {
     console.log("Database connected successfully")
 
     // We want our database to connect before the server starts listening
     // So this is a good approach to connect DB first, then listen to PORT
-    app.listen(7000, () => {
+    server.listen(7000, () => {
         console.log("Server listening on PORT 7000")
     })
 }).catch((err) => {

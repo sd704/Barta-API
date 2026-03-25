@@ -7,17 +7,7 @@ const blockListCheck = async (req, res, next) => {
         const userId = req.userObj._id
         const { id } = req.params
 
-        // Validate ObjectId format first
-        if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(404).json({ message: `User not found!` })
-        }
-
-        // Validate Receiver ID
-        // const obj = await User.findById(id)
-        const targetUser = await User.exists({ _id: id }) // lighter than findById
-        if (!targetUser) {
-            return res.status(404).json({ message: `User not found!` })
-        }
+        // Validate Receiver ID -> userIdValidation
 
         // Check if User is Blocked or User blocked Receiver
         const searchResult = await BlockList.findOne({

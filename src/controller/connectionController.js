@@ -75,12 +75,7 @@ const blockedUsers = async (req, res, next) => {
 
 const getConnectionStatus = async (req, res, next) => {
     const userId = req.userObj._id
-    const targetUserId = req.params.id
-
-    if (!mongoose.Types.ObjectId.isValid(targetUserId)) { return res.status(404).json({ message: `User not found!` }) }
-
-    const targetUser = await User.exists({ _id: targetUserId }) // lighter than findById
-    if (!targetUser) { return res.status(404).json({ message: `User not found!` }) }
+    const targetUserId = req.params.uid
 
     const participants = [userId.toString(), targetUserId].sort().join('|')
 
