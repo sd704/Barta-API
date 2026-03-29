@@ -6,11 +6,12 @@ const mongoose = require('mongoose')
 const getMessages = async (req, res, next) => {
     const userId = req.userObj._id
     const targetUserId = req.params.uid
+    const participants = [userId, targetUserId].sort()
 
     // Check if chat exists, else upsert
     let chat = await Chat.findOneAndUpdate(
-        { participants: { $all: [userId, targetUserId] } },
-        { $setOnInsert: { participants: [userId, targetUserId], messages: [] } },
+        { participants: participants },
+        { $setOnInsert: { participants, messages: [] } },
         { new: true, upsert: true }
     ).populate({ path: "participants", select: SAFE_DATA }).lean()
 
@@ -23,7 +24,7 @@ const getChats = async (req, res, next) => {
     // Check if chat exists
     const chats = await Chat.find(
         { participants: new mongoose.Types.ObjectId(userId) },
-        { participants: 1, lastMessage: 1 } // projection
+        { participants: 1, lastMessage: 1 } // projection -> choosing which fields are included or excluded in the result.
     ).populate({ path: "participants", select: SAFE_DATA }).lean()
 
     const filteredChats = chats.filter(chat => chat.lastMessage).map(chat => {

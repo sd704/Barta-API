@@ -1,5 +1,6 @@
 const socket = require('socket.io')
 const { Chat } = require('../model/chat')
+const { SAFE_DATA } = require("../utils/constant")
 
 const initializeSocket = (server) => {
     const io = socket(server, {
@@ -9,37 +10,36 @@ const initializeSocket = (server) => {
     io.on("connection", (socket) => {
         // Handle Events
 
-        socket.on("joinRoom", ({ loggedInUserId, targetUserId }) => {
-            const roomId = [loggedInUserId, targetUserId].sort().join('|')
-            socket.join(roomId)
+        socket.on("joinRoom", ({ loggedInUserId }) => {
+            socket.join(loggedInUserId)   // join one room only
         })
 
         socket.on("sendMessage", async ({ loggedInUserId, targetUserId, text }) => {
             try {
-                const roomId = [loggedInUserId, targetUserId].sort().join('|')
-
-                // Check if chat exists
-                let chat = await Chat.findOne({ participants: { $all: [loggedInUserId, targetUserId] } })
-
-                // Create chat if chat does not exist
-                if (!chat) {
-                    chat = new Chat({ participants: [loggedInUserId, targetUserId], messages: [] })
-                }
-
+                // const roomId = [loggedInUserId, targetUserId].sort().join('|')
+                const participants = [loggedInUserId, targetUserId].sort()
                 const newMessage = { senderId: loggedInUserId, text }
 
-                // messageSchema
-                chat.messages.push(newMessage)
+                // Check if chat exists, if not upsert
+                let chat = await Chat.findOneAndUpdate(
+                    { participants },
+                    {
+                        $push: { messages: newMessage },
+                        $set: { lastMessage: newMessage },
+                        $setOnInsert: { participants }
+                    },
+                    {
+                        new: true,
+                        upsert: true
+                    }
+                ).populate({ path: "participants", select: SAFE_DATA })
 
-                // Set lastMessage
-                chat.lastMessage = newMessage
-
-                // Save msg to DB
-                await chat.save()
+                const targetUserData = chat.participants.find(user => user._id.toString() !== loggedInUserId.toString())
+                const loggedInUserData = chat.participants.find(user => user._id.toString() !== targetUserId.toString())
 
                 // emit -> sending msg to client
-                // io.to(roomId).emit("messageReceived", { loggedInUserId, targetUserId, text })
-                io.to(roomId).emit("messageReceived", { lastMessage: chat.lastMessage })
+                io.to(loggedInUserId).emit("messageReceived", { id: chat._id, lastMessage: chat.lastMessage, receiver: targetUserData })
+                io.to(targetUserId).emit("messageReceived", { id: chat._id, lastMessage: chat.lastMessage, receiver: loggedInUserData })
 
             } catch (err) {
                 console.error(err)
