@@ -5,17 +5,14 @@ const mongoose = require('mongoose')
 const blockListCheck = async (req, res, next) => {
     try {
         const userId = req.userObj._id
-        const { id } = req.params
+        const { uid } = req.params
 
-        // Validate Receiver ID -> userIdValidation
+        // Validate Receiver ID already done by middleware -> userIdValidation 
+
+        const participants = [userId.toString(), uid].sort().join('|')
 
         // Check if User is Blocked or User blocked Receiver
-        const searchResult = await BlockList.findOne({
-            $or: [
-                { senderId: id, receiverId: userId },
-                { senderId: userId, receiverId: id }
-            ]
-        })
+        const searchResult = await BlockList.findOne({ participants })
 
         if (searchResult && searchResult.senderId.equals(userId)) {
             return res.status(403).json({ message: `Un-block user to send any request!` })

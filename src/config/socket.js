@@ -1,24 +1,82 @@
+const cookie = require("cookie")
+const jwt = require('jsonwebtoken')
+const JWTKEY = process.env.JWTKEY
+const mongoose = require('mongoose')
+const { User } = require("../model/user")
 const socket = require('socket.io')
 const { Chat } = require('../model/chat')
+const { Connection } = require("../model/connection")
+const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
+
 
 const initializeSocket = (server) => {
     const io = socket(server, {
-        cors: { origin: "http://localhost:5173" }
+        cors: {
+            origin: "http://localhost:5173",
+            credentials: true
+        }
+    })
+
+    // Socket Middleware for token auth
+    io.use(async (socket, next) => {
+        try {
+            const cookies = cookie.parse(socket.handshake.headers.cookie || "")
+            const token = cookies.token
+
+            if (!token) {
+                console.log("SOCKET_AUTH_ERROR: EMPTY_TOKEN")
+                return next(new Error("EMPTY_TOKEN"))
+            }
+
+            const { _id } = jwt.verify(token, JWTKEY)
+            if (!_id || !mongoose.Types.ObjectId.isValid(_id)) {
+                console.log("SOCKET_AUTH_ERROR: INVALID_CREDENTIAL")
+                return next(new Error("INVALID_CREDENTIAL"))
+            }
+
+            const userObj = await User.findById(_id)
+            if (!userObj) {
+                console.log("SOCKET_AUTH_ERROR: INVALID_CREDENTIAL")
+                return next(new Error("INVALID_CREDENTIAL"))
+            }
+            socket.user = userObj
+            next()
+        } catch (err) {
+            console.log("SOCKET_AUTH_ERROR: INVALID_TOKEN")
+            next(new Error("INVALID_TOKEN"))
+        }
     })
 
     io.on("connection", (socket) => {
-        // Handle Events
 
-        socket.on("joinRoom", ({ loggedInUserId }) => {
+        const loggedInUserId = socket.user._id.toString()
+
+        socket.on("joinRoom", () => {
             socket.join(loggedInUserId)   // join one room only
         })
 
-        socket.on("sendMessage", async ({ loggedInUserId, targetUserId, text }) => {
+        socket.on("sendMessage", async ({ targetUserId, text }) => {
             try {
-                // const roomId = [loggedInUserId, targetUserId].sort().join('|')
+
+                // Check if user is friend or blocked
+                const connectionId = [loggedInUserId, targetUserId].sort().join('|')
+                const [isFriend, isBlocked] = await Promise.all([
+                    Connection.findOne({ participants: connectionId }).lean(),
+                    BlockList.findOne({ participants: connectionId }).lean()
+                ])
+
+                if (!isFriend || !!isBlocked) {
+                    throw new Error("SOCKET_ERROR: SEND_MESSAGE_DENIED")
+                }
+
+                // id and text validation
+                if (!mongoose.Types.ObjectId.isValid(targetUserId) || typeof text !== "string" || !text.trim()) {
+                    return
+                }
+
                 const participants = [loggedInUserId, targetUserId].sort()
-                const newMessage = { senderId: loggedInUserId, text }
+                const newMessage = { senderId: loggedInUserId, text: text.slice(0, 100) }
 
                 // Check if chat exists, if not upsert
                 let chat = await Chat.findOneAndUpdate(
@@ -34,17 +92,21 @@ const initializeSocket = (server) => {
                     }
                 ).populate({ path: "participants", select: SAFE_DATA })
 
-                const targetUserData = chat.participants.find(user => user._id.toString() !== loggedInUserId.toString())
-                const loggedInUserData = chat.participants.find(user => user._id.toString() !== targetUserId.toString())
+                const targetUserData = chat.participants.find(user => !user._id.equals(loggedInUserId))
+                const loggedInUserData = chat.participants.find(user => !user._id.equals(targetUserId))
 
-                // emit -> sending msg to client
-                io.to(loggedInUserId).emit("messageReceived", { id: chat._id, lastMessage: chat.lastMessage, receiver: targetUserData })
-                io.to(targetUserId).emit("messageReceived", { id: chat._id, lastMessage: chat.lastMessage, receiver: loggedInUserData })
+                // emit -> sending msg to all clients in a chat
+                io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.lastMessage, receiver: targetUserData })
+                io.to(targetUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.lastMessage, receiver: loggedInUserData })
 
             } catch (err) {
                 console.error(err)
             }
         })
+
+        // socket.emit("errorMessage", {
+        //     message: "SEND_MESSAGE_FAILED"
+        // })
 
     })
 }

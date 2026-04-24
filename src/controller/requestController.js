@@ -138,12 +138,7 @@ const removeRequest = async (req, res, next) => {
 const blockRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
 
-    // Check if connection request exists
-    const searchResult = await BlockList.findOne({ senderId: userId, receiverId: targetUserId })
-
-    if (searchResult) {
-        return res.status(409).json({ message: `User already blocked!` })
-    }
+    // Check if connection request exists -> Done by blockListCheck middleware
 
     const connectionObj = { senderId: userId, receiverId: targetUserId }
     const blockRequest = new BlockList(connectionObj)

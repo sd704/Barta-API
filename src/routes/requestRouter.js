@@ -42,7 +42,7 @@ requestRouter.delete('/api/requests/:uid/withdraw', tokenAuth, idSimilarityCheck
 requestRouter.delete('/api/requests/:uid/remove', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, removeRequest)
 
 // blocked -> Block User, Blocked users cannot see the blockers profile/posts, and cannot send requests
-requestRouter.post('/api/blocks/:uid', tokenAuth, idSimilarityCheck, userIdValidation, blockRequest)
+requestRouter.post('/api/blocks/:uid', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, blockRequest)
 
 // unblock -> Un-Block User
 requestRouter.delete('/api/blocks/:uid', tokenAuth, idSimilarityCheck, userIdValidation, unblockRequest)

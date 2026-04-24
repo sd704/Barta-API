@@ -49,9 +49,9 @@ userSchema.pre("validate", function () {
 })
 
 // Arrow function will not work here because arrow function don't have 'this' binding
-userSchema.methods.getJWT = async function () {
+userSchema.methods.getJWT = function () {
     const userObj = this
-    const token = await jwt.sign({ _id: userObj._id }, JWTKEY, { expiresIn: '7d' });
+    const token = jwt.sign({ _id: userObj._id }, JWTKEY, { expiresIn: '7d' });
     return token
 }
 

@@ -23,7 +23,7 @@ const signupUser = async (req, res, next) => {
     const token = await user.getJWT()
     res.cookie("token", token, {
         httpOnly: true,        // prevents JS access (XSS protection)
-        //secure: true,        // only over HTTPS
+        secure: true,        // only over HTTPS
         sameSite: "strict",  // CSRF protection
     })
     res.status(201).json({ message: `User data saved successfully`, data: savedUser.filterSafeData() })

@@ -10,7 +10,7 @@ const tokenAuth = async (req, res, next) => {
             return res.status(401).json({ message: 'Token not provided!' });
         }
 
-        const { _id } = await jwt.verify(token, JWTKEY)
+        const { _id } = jwt.verify(token, JWTKEY)
         if (!_id) {
             return res.status(401).json({ message: `Invalid Token!` })
         }
