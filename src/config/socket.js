@@ -9,6 +9,8 @@ const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
 
+// Simple Set of online user IDs
+const onlineUsers = new Set()
 
 const initializeSocket = (server) => {
     const io = socket(server, {
@@ -54,6 +56,8 @@ const initializeSocket = (server) => {
 
         socket.on("joinRoom", () => {
             socket.join(loggedInUserId)   // join one room only
+            onlineUsers.add(loggedInUserId)
+            io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: true })
         })
 
         socket.on("sendMessage", async ({ targetUserId, text }) => {
@@ -104,10 +108,23 @@ const initializeSocket = (server) => {
             }
         })
 
+        socket.on("presence:subscribe", ({ userIds }) => {
+            for (const userId of userIds) {
+                socket.join(`presence:${userId}`)
+                if (onlineUsers.has(userId)) {
+                    io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: true })
+                }
+            }
+        })
+
         // socket.emit("errorMessage", {
         //     message: "SEND_MESSAGE_FAILED"
         // })
 
+        socket.on("disconnect", () => {
+            onlineUsers.delete(loggedInUserId)
+            io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: false })
+        })
     })
 }
 
