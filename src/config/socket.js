@@ -10,7 +10,7 @@ const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
 
 // Simple Set of online user IDs
-const onlineUsers = new Set()
+const onlineUsers = new Map() // [ {uid, count} ]
 
 const initializeSocket = (server) => {
     const io = socket(server, {
@@ -56,7 +56,11 @@ const initializeSocket = (server) => {
 
         socket.on("joinRoom", () => {
             socket.join(loggedInUserId)   // join one room only
-            onlineUsers.add(loggedInUserId)
+
+            // User login from first device -> count=1, later devices will show the count
+            const count = onlineUsers.get(loggedInUserId) || 0
+            onlineUsers.set(loggedInUserId, count + 1)
+
             io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: true })
         })
 
@@ -111,9 +115,8 @@ const initializeSocket = (server) => {
         socket.on("presence:subscribe", ({ userIds }) => {
             for (const userId of userIds) {
                 socket.join(`presence:${userId}`)
-                if (onlineUsers.has(userId)) {
-                    io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: true })
-                }
+                const count = onlineUsers.get(userId) || 0
+                io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0) })
             }
         })
 
@@ -122,8 +125,13 @@ const initializeSocket = (server) => {
         // })
 
         socket.on("disconnect", () => {
-            onlineUsers.delete(loggedInUserId)
-            io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: false })
+            const count = onlineUsers.get(loggedInUserId)
+            if (count === 1) {
+                onlineUsers.delete(loggedInUserId)
+                io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: false })
+            } else {
+                onlineUsers.set(loggedInUserId, count - 1)
+            }
         })
     })
 }
