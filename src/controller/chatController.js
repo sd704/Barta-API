@@ -19,19 +19,17 @@ const getMessages = async (req, res, next) => {
 const getChats = async (req, res, next) => {
     const userId = req.userObj._id
 
-    // Check if chat exists
     const chats = await Chat.find(
         { participants: new mongoose.Types.ObjectId(userId) }, // Find chats where loggedInUser is one of the participants
-        { participants: 1, lastMessage: 1 } // projection -> choosing which fields are included or excluded in the result.
+        { participants: 1, messages: { $slice: -1 } } // projection -> choosing which fields are included or excluded in the result.
     ).populate({ path: "participants", select: SAFE_DATA }).lean()
 
-    const filteredChats = chats.filter(chat => chat.lastMessage).map(chat => {
+    const filteredChats = chats.filter(chat => (chat.messages.length > 0)).map(chat => {
         const otherUserId = chat.participants.find(user => user._id.toString() !== userId.toString())
-
         return {
             _id: chat._id,
             userData: otherUserId,
-            lastMessage: chat.lastMessage
+            lastMessage: chat.messages[0]
         }
     })
 

@@ -36,6 +36,7 @@ const userSchema = new mongoose.Schema({
             message: `Invalid gender: {VALUE}`
         }
     },
+    lastSeen: { type: Date },
     pfp: { type: String, trim: true }
 }, {
     timestamps: true
