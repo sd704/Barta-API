@@ -146,7 +146,8 @@ const initializeSocket = (server) => {
             const success = (result.matchedCount === 1 && result.modifiedCount > 0)
             if (success) {
                 const senderId = chat.participants.find(user => !user._id.equals(loggedInUserId))
-                io.to(senderId.toString()).emit("msgSeenSuccess", { receiverId: loggedInUserId, stringChatId, stringMessageIds })
+                io.to(senderId.toString()).emit("msgSeenSuccess", { receiverId: loggedInUserId, msgReceiverId: loggedInUserId, stringChatId, stringMessageIds })
+                io.to(loggedInUserId).emit("msgSeenSuccess", { receiverId: senderId.toString(), msgReceiverId: loggedInUserId, stringChatId, stringMessageIds })
             }
 
             // Updating on server, better to update on mongo db
@@ -156,6 +157,10 @@ const initializeSocket = (server) => {
 
             // notify sender
             // socket.to(chat.participants).emit("messagesSeen", { chatId })
+        })
+
+        socket.on("typing", ({ targetUserId, status }) => {
+            io.to(targetUserId).emit("typing", { userId: loggedInUserId, status })
         })
 
         // socket.emit("errorMessage", {
