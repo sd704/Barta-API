@@ -65,11 +65,28 @@ const initializeSocket = (server) => {
             io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: true })
         })
 
-        socket.on("presence:subscribe", ({ userIds }) => {
+        socket.on("presence:subscribe", async ({ userIds }) => {
+
+            // We don't let blocked users know online status
+            const participantKeys = userIds.map(targetId => [loggedInUserId, targetId.toString()].sort().join("|"))
+
+            const [cList, bList] = await Promise.all([
+                Connection.find({ participants: { $in: participantKeys } }).lean(),
+                BlockList.find({ participants: { $in: participantKeys } }).lean()
+            ])
+
+            const connectedSet = new Set(cList.map(c => c.participants))
+            const blockedSet = new Set(bList.map(block => block.participants)) // set of participantKeys where blocked
+
             for (const userId of userIds) {
-                socket.join(`presence:${userId}`)
-                const count = onlineUsers.get(userId) || 0
-                io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0) })
+                const participantKey = [loggedInUserId, userId].sort().join("|")
+                const connectionObj = cList.find(c => c.participants === participantKey)
+
+                if (!blockedSet.has(participantKey) && connectedSet.has(participantKey) && connectionObj?.status == "accepted") {
+                    socket.join(`presence:${userId}`)
+                    const count = onlineUsers.get(userId) || 0
+                    io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0) })
+                }
             }
         })
 
