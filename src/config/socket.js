@@ -127,10 +127,11 @@ const initializeSocket = (server) => {
 
                 const targetUserData = chat.participants.find(user => !user._id.equals(loggedInUserId))
                 const loggedInUserData = chat.participants.find(user => !user._id.equals(targetUserId))
+                const connectionData = { status: isFriend.status, senderId: isFriend.senderId, blockedByMe: false, blockedMe: false, }
 
                 // emit -> sending msg to all clients in a chat
-                io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: targetUserData })
-                io.to(targetUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: loggedInUserData })
+                io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: targetUserData, connectionData })
+                io.to(targetUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: loggedInUserData, connectionData })
 
             } catch (err) {
                 console.error(err)
