@@ -62,7 +62,7 @@ const initializeSocket = (server) => {
             const count = onlineUsers.get(loggedInUserId) || 0
             onlineUsers.set(loggedInUserId, count + 1)
 
-            io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: true })
+            io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: true, lastSeen: new Date() })
         })
 
         socket.on("presence:subscribe", async ({ userIds }) => {
@@ -84,8 +84,9 @@ const initializeSocket = (server) => {
 
                 if (!blockedSet.has(participantKey) && connectedSet.has(participantKey) && connectionObj?.status == "accepted") {
                     socket.join(`presence:${userId}`)
+                    const userLastSeen = await User.findById(userId).select("lastSeen").lean()
                     const count = onlineUsers.get(userId) || 0
-                    io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0) })
+                    io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0), lastSeen: userLastSeen?.lastSeen })
                 }
             }
         })
@@ -189,11 +190,10 @@ const initializeSocket = (server) => {
             try {
                 const count = onlineUsers.get(loggedInUserId)
                 if (count === 1) {
-                    onlineUsers.delete(loggedInUserId)
-                    io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: false })
-
                     // save last seen in DB
-                    await User.findByIdAndUpdate(loggedInUserId, { lastSeen: new Date() })
+                    const update = await User.findByIdAndUpdate(loggedInUserId, { lastSeen: new Date() }, { new: true }).lean()
+                    onlineUsers.delete(loggedInUserId)
+                    io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: false, lastSeen: update?.lastSeen })
                 } else {
                     onlineUsers.set(loggedInUserId, count - 1)
                 }
