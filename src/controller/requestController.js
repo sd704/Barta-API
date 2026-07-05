@@ -89,17 +89,18 @@ const rejectRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
 
     // Check if connection request exists, if its "interested", updated to "rejected"
-    const updated = await Connection.findOneAndUpdate(
-        { senderId: targetUserId, receiverId: userId, status: "interested" },
-        { status: "rejected" },
-        { runValidators: true },
-        { new: true }
-    )
+    // const updated = await Connection.findOneAndUpdate(
+    //     { senderId: targetUserId, receiverId: userId, status: "interested" },
+    //     { status: "rejected" },
+    //     { runValidators: true },
+    //     { new: true }
+    // )
+    const deleted = await Connection.findOneAndDelete({ senderId: targetUserId, receiverId: userId, status: "interested" })
 
-    if (updated) {
-        await updated.populate("senderId", SAFE_DATA)
-        await updated.populate("receiverId", SAFE_DATA)
-        return res.status(200).json({ message: `Connection request rejected!`, data: formatResponse(updated) })
+    if (deleted) {
+        await deleted.populate("senderId", SAFE_DATA)
+        await deleted.populate("receiverId", SAFE_DATA)
+        return res.status(200).json({ message: `Connection request rejected!`, data: formatResponse2(deleted, "rejected") })
     }
 
     return res.status(404).json({ message: `Connection does not exist!` })
