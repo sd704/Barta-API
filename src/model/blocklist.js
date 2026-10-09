@@ -21,7 +21,7 @@ const blockListSchema = new mongoose.Schema({
 
 // Fast directional queries
 blockListSchema.index({ senderId: 1, receiverId: 1 })
-blockListSchema.index({ receiverId: 1 })
+blockListSchema.index({ receiverId: 1 }) // Users who blocked the current user
 
 // This function executes before model.save()
 blockListSchema.pre("validate", function () {

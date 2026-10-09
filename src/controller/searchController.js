@@ -68,7 +68,7 @@ const findUserById = async (req, res, next) => {
 
     // BlockList Check
     const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId }).lean()
-    if (searchResult) { return res.status(403).json({ message: `User not found!` }) }
+    if (searchResult) { return res.status(404).json({ message: `User not found!` }) }
 
     let data = result.filterSafeData()
 
