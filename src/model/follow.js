@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+// const { FOLLOW_STATUSES } = require("../utils/constant")
 
 const followSchema = new mongoose.Schema({
     followerId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -6,7 +7,7 @@ const followSchema = new mongoose.Schema({
     status: {
         type: String, lowercase: true, required: true, default: "active",
         enum: {
-            values: ["pending", "active", "rejected"],
+            values: ["pending", "active"], // Don't need rejected, just delete the record
             message: `Invalid follow status: {VALUE}`
         }
     }

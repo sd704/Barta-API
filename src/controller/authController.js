@@ -2,9 +2,10 @@ const { User } = require("../model/user")
 const bcrypt = require('bcrypt')
 
 const handleLogin = async (req, res, next) => {
-    const { email, password } = req.body
+    const { email, password } = req.body || {} // Express 5 leaves req.body undefined when no JSON body was sent.
 
-    if (!email || !password) {
+    // Strings only
+    if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
         return res.status(400).json({ message: `Email and password required` })
     }
 
