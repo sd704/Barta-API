@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+// const { COMMENT_TEXT_MAX } = require("../utils/constant")
 
 const commentSchema = new mongoose.Schema({
     journalId: { type: mongoose.Schema.Types.ObjectId, ref: "Journal", required: true },
@@ -13,3 +14,4 @@ commentSchema.index({ journalId: 1, entryId: 1, parentId: 1, createdAt: 1 }) // 
 
 const Comment = mongoose.model('Comment', commentSchema)
 module.exports = { Comment }
+

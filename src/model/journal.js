@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+// const { VISIBILITIES, JOURNAL_STATUSES, JOURNAL_TITLE_MAX, JOURNAL_ABOUT_MAX, JOURNAL_CATEGORY_MAX, CHAPTER_TITLE_MAX, PROGRESS_MIN, PROGRESS_MAX } = require("../utils/constant")
 
 const chapterSchema = new mongoose.Schema({
     title: { type: String, required: true, trim: true, maxlength: 120 },
@@ -6,21 +7,14 @@ const chapterSchema = new mongoose.Schema({
 }, { timestamps: true })
 
 const journalSchema = new mongoose.Schema({
-    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    authorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     title: { type: String, required: true, trim: true, maxlength: 140 },
     about: { type: String, trim: true, maxlength: 500, default: "" },
-    category: {
-        type: String,
-        required: true,
-        enum: {
-            values: ["Product", "Language", "Writing", "Health", "Mechanical", "Engineering"],
-            message: `Invalid category: {VALUE}`
-        }
-    },
+    category: { type: String, required: true, trim: true, maxlength: 30 },
     visibility: {
         type: String, lowercase: true, default: "private",
         enum: {
-            values: ["public", "private", "friends", "allowed", "subscribed"],
+            values: ["public", "private", "friends", "selected", "subscribed"],
             message: `Invalid visibility: {VALUE}`
         }
     },
@@ -35,7 +29,7 @@ const journalSchema = new mongoose.Schema({
     pinned: { type: Boolean, default: false },
     order: { type: Number, default: 0 }, // For manual order
     progress: { type: Number, min: 0, max: 100, default: 0 }, // User can mark progress with each entry
-    startedAt: { type: Date, default: Date.now }, // Fill with Journal created date automatically
+    // startedAt: { type: Date, default: Date.now }, // Fill with Journal created date automatically
     endedAt: { type: Date, default: null }, // When progress touches 100, saves that entry date
     lastEntryAt: { type: Date, default: null },
     chapters: { type: [chapterSchema], default: [] },
@@ -43,15 +37,18 @@ const journalSchema = new mongoose.Schema({
     entryCount: { type: Number, default: 0, min: 0 }, // update this when entry is added, $inc on create and delete.
     milestoneCount: { type: Number, default: 0, min: 0 }, // $inc when an entry of type milestone is created, deleted, or retyped.
     followerCount: { type: Number, default: 0, min: 0 }, // $inc when a follow becomes active
-    aiSummary: { type: String, default: "" }, // Cache the generated text. Regenerate when lastEntryAt is newer than aiSummaryUpdatedAt.
-    aiSummaryUpdatedAt: { type: Date, default: null }
-}, { timestamps: true })
+    aiSummary: { type: String, default: "" }, // Cache the generated text
+}, {
+    timestamps: true,
+    optimisticConcurrency: true // prevents one request from silently overwriting changes made by other request.
+})
 
-journalSchema.index({ ownerId: 1, pinned: -1, lastEntryAt: -1 }) // For feed: Pinned items first, then entry date sort (1 for ascending, -1 for descending)
-journalSchema.index({ ownerId: 1, status: 1, lastEntryAt: -1 }) // Helps to get document count for specific status: Journal.countDocuments({ownerId, status: "active"})
-journalSchema.index({ ownerId: 1, order: 1 }) // Manual Order, no pins
-journalSchema.index({ ownerId: 1, createdAt: 1 }) // Date Sort
+journalSchema.index({ authorId: 1, pinned: -1, lastEntryAt: -1 }) // For feed: Pinned items first, then entry date sort (1 for ascending, -1 for descending)
+journalSchema.index({ authorId: 1, status: 1, lastEntryAt: -1 }) // Helps to get document count for specific status: Journal.countDocuments({authorId, status: "active"})
+journalSchema.index({ authorId: 1, order: 1 }) // Manual Order, no pins
+journalSchema.index({ authorId: 1, createdAt: 1 }) // Date Sort
 journalSchema.index({ title: "text", about: "text", category: "text" }) // Helps with Search
 
 const Journal = mongoose.model('Journal', journalSchema)
 module.exports = { Journal }
+
