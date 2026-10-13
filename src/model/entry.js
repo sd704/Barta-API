@@ -1,8 +1,10 @@
 const mongoose = require('mongoose')
+const { WORDS_PER_MINUTE } = require("../utils/constant")
+// VISIBILITIES, ENTRY_TYPES, ENTRY_TITLE_MAX, ENTRY_PREVIEW_MAX, ENTRY_BODY_MAX, ENTRY_MOOD_MAX, TAG_MAX_LENGTH, MAX_TAGS
 
 const entrySchema = new mongoose.Schema({
     journalId: { type: mongoose.Schema.Types.ObjectId, ref: "Journal", required: true },
-    ownerId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    authorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     chapterId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Select chapter or create new chapter in UI
     type: {
         type: String, lowercase: true, required: true,
@@ -22,13 +24,13 @@ const entrySchema = new mongoose.Schema({
         type: [{ type: String, trim: true, maxlength: 30 }],
         validate: {
             validator: (tags) => tags.length <= 5,
-            message: "Tags cannot exceed 5"
+            message: `Tags cannot exceed ${5}`
         }
     },
     visibility: {
-        type: String, lowercase: true, default: "public",
+        type: String, lowercase: true, default: "private",
         enum: {
-            values: ["public", "private", "friends", "allowed", "subscribed"],
+            values: ["public", "private", "friends", "selected", "subscribed"],
             message: `Invalid visibility: {VALUE}`
         }
     },
@@ -43,8 +45,9 @@ entrySchema.index({ tags: 1 }) // Find entries with same tag
 
 entrySchema.pre("validate", function () {
     const words = (this.body || "").trim().split(/\s+/).filter(Boolean).length
-    this.readingTime = Math.max(1, Math.ceil(words / 200))
+    this.readingTime = Math.max(1, Math.ceil(words / WORDS_PER_MINUTE))
 })
 
 const Entry = mongoose.model('Entry', entrySchema)
 module.exports = { Entry }
+
