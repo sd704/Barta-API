@@ -111,30 +111,30 @@ const removeReaction = async (req, res, options) => {
 const likeEntry = (req, res) => addReaction(req, res, {
     Model: Like,
     counterField: "likeCount",
-    createdMessage: title => `You liked "${title}"`,
-    duplicateMessage: title => `You have already liked "${title}"`
+    createdMessage: title => `You liked '${title}'`,
+    duplicateMessage: title => `You have already liked '${title}'`
 })
 
 // For DELETE '/like'
 const unlikeEntry = (req, res) => removeReaction(req, res, {
     Model: Like,
     counterField: "likeCount",
-    removedMessage: title => `You removed your like from "${title}"`,
-    missingMessage: title => `You have not liked "${title}"`
+    removedMessage: title => `You removed your like from '${title}'`,
+    missingMessage: title => `You have not liked '${title}'`
 })
 
 // For POST '/save'
 const saveEntry = (req, res) => addReaction(req, res, {
     Model: Bookmark,
-    createdMessage: title => `You saved "${title}"`,
-    duplicateMessage: title => `You have already saved "${title}"`
+    createdMessage: title => `You saved '${title}'`,
+    duplicateMessage: title => `You have already saved '${title}'`
 })
 
 // For DELETE '/like'
 const unsaveEntry = (req, res) => removeReaction(req, res, {
     Model: Bookmark,
-    removedMessage: title => `You removed "${title}" from your saved entries`,
-    missingMessage: title => `You have not saved "${title}"`
+    removedMessage: title => `You removed '${title}' from your saved entries`,
+    missingMessage: title => `You have not saved '${title}'`
 })
 
 module.exports = {

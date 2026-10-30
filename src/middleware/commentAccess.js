@@ -15,9 +15,9 @@ const requireCommentAccess = (req, res, next) => {
 // Check is comment allowed on Journal/Entry
 const requireCommentsOpen = (req, res, next) => {
     if (req.journal.visibility === "private") return res.status(403).json({ message: "Comments are not allowed on a private journal" })
-    if (!req.journal.commentsAllowed) return res.status(403).json({ message: `Comments are turned off for "${req.journal.title}"` })
+    if (!req.journal.commentsAllowed) return res.status(403).json({ message: `Comments are turned off for '${req.journal.title}'` })
     if (req.entry && req.entry.visibility === "private") return res.status(403).json({ message: "Comments are not allowed on a private entry" })
-    if (req.entry && !req.entry.commentsAllowed) return res.status(403).json({ message: `Comments are turned off for "${req.entry.title}"` })
+    if (req.entry && !req.entry.commentsAllowed) return res.status(403).json({ message: `Comments are turned off for '${req.entry.title}'` })
     next()
 }
 

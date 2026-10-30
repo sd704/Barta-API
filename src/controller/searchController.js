@@ -9,7 +9,7 @@ const findUsersByName = async (req, res, next) => {
     const userBlockList = req.userBlockList
 
     if (!username || typeof username !== 'string') {
-        return res.status(400).json({ message: 'Search query "username" required!' })
+        return res.status(400).json({ message: `Search query 'username' required!` })
     }
 
     // Prevents regex injection when building search patterns from user input
@@ -35,7 +35,7 @@ const findUserByEmail = async (req, res, next) => {
     const { email } = req.query
 
     if (!email) {
-        return res.status(400).json({ message: 'Search query "email" required!' })
+        return res.status(400).json({ message: `Search query 'email' required!` })
     }
 
     const result = await User.findOne({ email })
@@ -57,7 +57,7 @@ const findUserById = async (req, res, next) => {
     const userId = req.userObj._id
     const { id } = req.query
 
-    if (!id) { return res.status(400).json({ message: 'Search query "id" required!' }) }
+    if (!id) { return res.status(400).json({ message: `Search query 'id' required!` }) }
     if (userId.toString() === id) { return res.status(400).json({ message: "Invalid request" }) }
 
     // Validate ObjectId format first

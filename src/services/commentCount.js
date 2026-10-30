@@ -20,7 +20,7 @@ const decrementCommentCount = ({ journalId, entryId }, amount, session) => {
     return model.updateOne(
         { _id: id },
         [{ $set: { commentCount: { $max: [0, { $subtract: ["$commentCount", amount] }] } } }],
-        { session }
+        { session, updatePipeline: true } // updatePipeline: true is required for array
     )
 }
 

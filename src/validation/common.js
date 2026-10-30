@@ -1,5 +1,6 @@
 const mongoose = require("mongoose")
 const { COVER_PATTERN, MAX_COVER_LENGTH, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } = require("../utils/constant")
+const ID_LABELS = { jid: "Journal ID", eid: "Entry ID", cid: "Chapter ID", uid: "User ID", commentId: "Comment ID" }
 
 // Send respnse 400 with error message
 const fail = (res, message) => res.status(400).json({ message })
@@ -59,7 +60,7 @@ const validateIds = (...idList) => {
     return (req, res, next) => {
         for (const id of idList) {
             // Reject request if any ID fails
-            if (!mongoose.Types.ObjectId.isValid(req.params[id])) return fail(res, `Invalid ${id}`)
+            if (!mongoose.Types.ObjectId.isValid(req.params[id])) return fail(res, `Invalid ${ID_LABELS[id] || id}`)
         }
         next()
     }

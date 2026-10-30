@@ -121,7 +121,7 @@ const initializeSocket = (server) => {
                         $setOnInsert: { participants }
                     },
                     {
-                        new: true,
+                        returnDocument: "after",
                         upsert: true
                     }
                 ).populate({ path: "participants", select: SAFE_DATA }).lean()
@@ -191,7 +191,7 @@ const initializeSocket = (server) => {
                 const count = onlineUsers.get(loggedInUserId)
                 if (count === 1) {
                     // save last seen in DB
-                    const update = await User.findByIdAndUpdate(loggedInUserId, { lastSeen: new Date() }, { new: true }).lean()
+                    const update = await User.findByIdAndUpdate(loggedInUserId, { lastSeen: new Date() }, { returnDocument: "after" }).lean()
                     onlineUsers.delete(loggedInUserId)
                     io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: false, lastSeen: update?.lastSeen })
                 } else {

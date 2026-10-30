@@ -30,7 +30,7 @@ const formatComment = (comment, author, options = {}) => ({
 const commentsClosedMessage = (journal, entry) => {
     if (journal.visibility === "private") return "Comments are not allowed on a private journal"
     if (entry && entry.visibility === "private") return "Comments are not allowed on a private entry"
-    return `Comments are turned off for "${journal.commentsAllowed ? entry.title : journal.title}"`
+    return `Comments are turned off for '${journal.commentsAllowed ? entry.title : journal.title}'`
 }
 
 // Recheck journal and entry inside a DB write transaction

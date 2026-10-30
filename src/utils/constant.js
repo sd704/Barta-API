@@ -21,7 +21,7 @@ const ENTRY_VISIBILITY_BY_JOURNAL = {
     friends: ["friends", "private"],
     subscribed: ["subscribed", "private"],
     selected: ["selected", "private"],
-    public: ["public", "private", "friends", "selected"]
+    public: ["public", "private", "friends"]
 }
 
 const JOURNAL_TITLE_MAX = 140
@@ -56,6 +56,12 @@ const LOCK_TIMEOUT_MS = 5 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 15 * 1000
 const SUMMARY_TEXT_MAX = 20000
 const ENTRY_FIELDS = "chapterId type title preview body mood tags createdAt updatedAt"
+
+const SUMMARY_QUERY = `The following JSON data is from a Journal, which has Chapters, and Chapters has Entries. 
+Summarize this data into a paragraph or two, which is easy to read, should be less than 1000 characters. 
+You don't have to mention chapter/entry title or numbers (optional), we just need the jist of what this whole journal/journey is about.
+If the entry type is "private", ignore it, don't mention them in summary.
+The output should be strictly a string, without quotes.`
 
 module.exports = {
     SAFE_DATA,
@@ -97,6 +103,7 @@ module.exports = {
     LOCK_TIMEOUT_MS,
     REQUEST_TIMEOUT_MS,
     SUMMARY_TEXT_MAX,
-    ENTRY_FIELDS
+    ENTRY_FIELDS,
+    SUMMARY_QUERY
 }
 

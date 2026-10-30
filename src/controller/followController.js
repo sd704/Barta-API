@@ -30,7 +30,7 @@ const followJournal = async (req, res) => {
 
             if (journal.visibility === "subscribed") {
                 const paid = await Subscription.exists({ subscriberId: followerId, authorId: journal.authorId }).session(session)
-                if (!paid) throw httpError(403, `Subscribe to this author to follow "${journal.title}"`)
+                if (!paid) throw httpError(403, `Subscribe to this author to follow '${journal.title}'`)
             }
 
             // Only public, friends and paid+subscribed journals are followed instantly, everything else needs author's approval
@@ -53,13 +53,13 @@ const followJournal = async (req, res) => {
 
             if (existing?.status === "pending") {
                 return res.status(409).json({
-                    message: `Your request to follow "${title}" is already awaiting approval`,
+                    message: `Your request to follow '${title}' is already awaiting approval`,
                     data: { journalId, status: "pending", statusLabel: "Pending approval" }
                 })
             }
 
             return res.status(409).json({
-                message: `You are already following "${title}"`,
+                message: `You are already following '${title}'`,
                 data: { journalId, status: "active", statusLabel: "Following" }
             })
         }
@@ -70,8 +70,8 @@ const followJournal = async (req, res) => {
     }
 
     const message = result.status === "active"
-        ? `You are now following "${result.title}"`
-        : `Your request to follow "${result.title}" is awaiting the author's approval`
+        ? `You are now following '${result.title}'`
+        : `Your request to follow '${result.title}' is awaiting the author's approval`
 
     res.status(201).json({
         message,
@@ -113,7 +113,7 @@ const unfollowJournal = async (req, res) => {
         await session.endSession()
     }
 
-    const target = result.revealTitle ? ` "${result.title}"` : ""
+    const target = result.revealTitle ? ` '${result.title}'` : ""
     const message = (result.previousStatus === "pending")
         ? `Your follow request${target} has been withdrawn`
         : `You unfollowed${target || " the journal"}`
@@ -126,7 +126,7 @@ const getFollowers = async (req, res) => {
 
     if (req.journalAccess.mode !== "full") {
         return res.status(200).json({
-            message: `Follower profiles for "${journal.title}" are available after access is approved`,
+            message: `Follower profiles for '${journal.title}' are available after access is approved`,
             data: { followerCount: journal.followerCount, followers: null }
         })
     }
@@ -158,7 +158,7 @@ const getFollowers = async (req, res) => {
         .map(follow => ({ user: follow.followerId, status: follow.status, followedAt: follow.createdAt }))
 
     res.status(200).json(paginatedResponse(
-        `Followers of "${journal.title}"`,
+        `Followers of '${journal.title}'`,
         data,
         total,
         page,
@@ -214,7 +214,7 @@ const reviewFollower = async (req, res) => {
                 const updated = await Follow.findOneAndUpdate(
                     { journalId, followerId, status: "pending" },
                     { $set: { status: "active" } },
-                    { new: true, runValidators: true, session }
+                    { returnDocument: "after", runValidators: true, session }
                 )
 
                 // Update Failed
@@ -266,9 +266,9 @@ const reviewFollower = async (req, res) => {
     }
 
     const messages = {
-        approved: `${result.name} can now follow "${result.title}"`,
+        approved: `${result.name} can now follow '${result.title}'`,
         rejected: `The follow request from ${result.name} was rejected`,
-        removed: `${result.name} was removed from the followers of "${result.title}"`
+        removed: `${result.name} was removed from the followers of '${result.title}'`
     }
 
     res.status(200).json({ message: messages[result.action] })

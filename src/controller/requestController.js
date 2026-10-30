@@ -28,7 +28,7 @@ const sendConnectRequest = async (req, res, next) => {
     const connectionObj = await Connection.findOneAndUpdate(
         { participants },
         { $set: { senderId: userId, receiverId: targetUserId, status: 'interested' } },
-        { new: true, upsert: true, runValidators: true }
+        { returnDocument: "after", upsert: true, runValidators: true }
     )
 
     await connectionObj.populate("senderId", SAFE_DATA)
@@ -64,7 +64,7 @@ const acceptRequest = async (req, res, next) => {
     const updated = await Connection.findOneAndUpdate(
         { senderId: targetUserId, receiverId: userId, status: "interested" },
         { status: "accepted" },
-        { runValidators: true, new: true }
+        { runValidators: true, returnDocument: "after" }
     )
 
     if (updated) {
