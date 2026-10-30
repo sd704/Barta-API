@@ -121,7 +121,7 @@ const initializeSocket = (server) => {
                         $setOnInsert: { participants }
                     },
                     {
-                        new: true,
+                        returnDocument: "after",
                         upsert: true
                     }
                 ).populate({ path: "participants", select: SAFE_DATA }).lean()

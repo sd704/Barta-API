@@ -57,6 +57,10 @@ const REQUEST_TIMEOUT_MS = 15 * 1000
 const SUMMARY_TEXT_MAX = 20000
 const ENTRY_FIELDS = "chapterId type title preview body mood tags createdAt updatedAt"
 
+const SUMMARY_QUERY = `The following JSON data is from a Journal, which has Chapters, and Chapters has Entries. 
+Summarize this data into a paragraph or two, which is easy to read, should be within 1000 characters. 
+The output should be strictly a string, without quotes.`
+
 module.exports = {
     SAFE_DATA,
     ALLOWED_UPDATES,
@@ -97,6 +101,7 @@ module.exports = {
     LOCK_TIMEOUT_MS,
     REQUEST_TIMEOUT_MS,
     SUMMARY_TEXT_MAX,
-    ENTRY_FIELDS
+    ENTRY_FIELDS,
+    SUMMARY_QUERY
 }
 

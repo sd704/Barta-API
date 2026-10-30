@@ -1,8 +1,8 @@
 const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { SummaryJob } = require("../model/summaryJob")
-const { MAX_ATTEMPTS, LOCK_TIMEOUT_MS, REQUEST_TIMEOUT_MS, SUMMARY_TEXT_MAX, USER_NAME_FIELDS, ENTRY_FIELDS } = require("../utils/constant")
-const SUMMARY_API_URL = process.env.SUMMARY_API_URL
+const { groqSummary } = require("./groqSummary")
+const { MAX_ATTEMPTS, LOCK_TIMEOUT_MS, USER_NAME_FIELDS, ENTRY_FIELDS } = require("../utils/constant")
 
 let workerTimer = null // The interval handle. startSummaryWorker won't start a second loop.
 let workerRunning = false // Stops a slow run from overlapping the next 5-second tick.
@@ -73,7 +73,7 @@ const claimJob = () => SummaryJob.findOneAndUpdate(
     { $set: { status: "processing", lockedAt: new Date() } },
 
     {
-        new: true, // Return the document after the update. The caller needs its version and attempts.
+        returnDocument: "after", // Return the document after the update. The caller needs its version and attempts.
         sort: { runAt: 1 } // When several jobs are due, claim the one that has waited longest. Uses the { status, runAt } index.
     }
 )
@@ -130,25 +130,6 @@ const buildSummaryPayload = async journalId => {
     }
 }
 
-// POST request to Summary AI API for Summary generation
-const requestSummary = async payload => {
-    if (!process.env.SUMMARY_API_KEY) throw new Error("SUMMARY_API_KEY is not configured")
-
-    const response = await fetch(SUMMARY_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.SUMMARY_API_KEY}` },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    })
-
-    if (!response.ok) throw new Error(`Summary API returned HTTP ${response.status}`)
-
-    const data = await response.json()
-    if (typeof data.summary !== "string" || !data.summary.trim()) throw new Error("Summary API returned an invalid summary")
-
-    return data.summary.trim().slice(0, SUMMARY_TEXT_MAX)
-}
-
 // Record a failure. The update matches version so a newer enqueue is not marked failed by this old attempt.
 const retryJob = async (job, error) => {
     const attempts = job.attempts + 1
@@ -182,7 +163,9 @@ const processJob = async job => {
             return
         }
 
-        const summary = await requestSummary(summaryData.payload) // API call
+        const summary = await groqSummary(summaryData.payload) // API call
+
+        if (typeof summary !== "string" || !summary.trim()) throw new Error("Summary API returned an invalid summary")
 
         // Avoid saving a stale summary if another entry operation occurred.
         const updated = await Journal.updateOne(

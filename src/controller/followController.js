@@ -214,7 +214,7 @@ const reviewFollower = async (req, res) => {
                 const updated = await Follow.findOneAndUpdate(
                     { journalId, followerId, status: "pending" },
                     { $set: { status: "active" } },
-                    { new: true, runValidators: true, session }
+                    { returnDocument: "after", runValidators: true, session }
                 )
 
                 // Update Failed
