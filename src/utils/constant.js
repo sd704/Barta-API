@@ -12,8 +12,6 @@ const JOURNAL_SORTS = ["updated", "alpha", "created", "manual"]
 const ENTRY_TYPES = ["journal", "decision", "milestone", "failure", "lesson", "launch"]
 const FOLLOW_STATUSES = ["pending", "active"]
 const FOLLOW_DECISIONS = ["active", "rejected"]
-const SUMMARY_JOB_STATUSES = ["pending", "processing", "failed"]
-
 
 // If Journal visibility is key, Entry visibility can be any one of the values
 const ENTRY_VISIBILITY_BY_JOURNAL = {
@@ -51,9 +49,8 @@ const DEFAULT_PAGE_LIMIT = 12
 const DEFAULT_LIST_LIMIT = 20
 const MAX_PAGE_LIMIT = 50
 
-const MAX_ATTEMPTS = 3
-const LOCK_TIMEOUT_MS = 5 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 15 * 1000
+const SUMMARY_RETRIES = 2 // Extra tries after the first summary request fails
 const SUMMARY_TEXT_MAX = 20000
 const ENTRY_FIELDS = "chapterId type title preview body mood tags createdAt updatedAt"
 
@@ -76,7 +73,6 @@ module.exports = {
     ENTRY_TYPES,
     FOLLOW_STATUSES,
     FOLLOW_DECISIONS,
-    SUMMARY_JOB_STATUSES,
     ENTRY_VISIBILITY_BY_JOURNAL,
     JOURNAL_TITLE_MAX,
     JOURNAL_ABOUT_MAX,
@@ -99,8 +95,7 @@ module.exports = {
     DEFAULT_PAGE_LIMIT,
     DEFAULT_LIST_LIMIT,
     MAX_PAGE_LIMIT,
-    MAX_ATTEMPTS,
-    LOCK_TIMEOUT_MS,
+    SUMMARY_RETRIES,
     REQUEST_TIMEOUT_MS,
     SUMMARY_TEXT_MAX,
     ENTRY_FIELDS,

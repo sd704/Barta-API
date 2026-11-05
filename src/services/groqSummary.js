@@ -1,8 +1,9 @@
 const Groq = require("groq-sdk")
-const { SUMMARY_QUERY, SUMMARY_TEXT_MAX, REQUEST_TIMEOUT_MS } = require("../utils/constant")
+const { SUMMARY_QUERY, SUMMARY_TEXT_MAX, REQUEST_TIMEOUT_MS, SUMMARY_RETRIES } = require("../utils/constant")
 const SUMMARY_API_KEY = process.env.SUMMARY_API_KEY
 
-const groqSummary = async (payload) => {
+// retries = extra tries after the first one, so retries 2 means up to 3 requests. The SDK retries timeouts and server errors.
+const groqSummary = async (payload, retries = SUMMARY_RETRIES) => {
     if (!SUMMARY_API_KEY) throw new Error('Summary API key not configured')
 
     const groq = new Groq({ apiKey: SUMMARY_API_KEY });
@@ -16,7 +17,7 @@ const groqSummary = async (payload) => {
             model: "openai/gpt-oss-120b",
         }, {
             timeout: REQUEST_TIMEOUT_MS,
-            maxRetries: 0
+            maxRetries: retries
         });
 
         const response = chatCompletion.choices[0]?.message
@@ -34,3 +35,5 @@ const groqSummary = async (payload) => {
 }
 
 module.exports = { groqSummary }
+
+

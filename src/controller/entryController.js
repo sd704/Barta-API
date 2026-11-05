@@ -4,7 +4,7 @@ const { Entry } = require("../model/entry")
 const { Like } = require("../model/like")
 const { Bookmark } = require("../model/bookmark")
 const { Comment } = require("../model/comment")
-const { enqueueJournalSummaryInBackground } = require("../services/journalSummaryService")
+const { refreshJournalSummary } = require("../services/journalSummaryService")
 const { entryVisibilityForJournal, commentsAllowedForVisibility } = require("../policy/journalRules")
 const { readableEntryVisibilities } = require("../policy/journalAccessPolicy")
 const { paginatedResponse } = require("../utils/apiResponse")
@@ -111,7 +111,7 @@ const createEntry = async (req, res) => {
         await session.endSession()
     }
 
-    enqueueJournalSummaryInBackground(req.journal._id) // Optional. Its failures retry separately and cannot fail this entry create.
+    await refreshJournalSummary(req.journal._id) // After commit. A summary failure keeps the old summary and cannot fail this entry create.
     res.status(201).json({ message: "Entry created successfully", data: createdEntry })
 }
 
@@ -180,7 +180,7 @@ const updateEntry = async (req, res) => {
         await session.endSession()
     }
 
-    enqueueJournalSummaryInBackground(req.journal._id) // Optional. Its failures retry separately and cannot fail this entry update.
+    await refreshJournalSummary(req.journal._id) // After commit. A summary failure keeps the old summary and cannot fail this entry update.
     res.status(200).json({ message: "Entry updated successfully", data: updatedEntry })
 }
 
@@ -219,7 +219,7 @@ const deleteEntry = async (req, res) => {
         await session.endSession()
     }
 
-    enqueueJournalSummaryInBackground(req.journal._id) // Optional. Its failures retry separately and cannot fail this entry delete.
+    await refreshJournalSummary(req.journal._id) // After commit. A summary failure keeps the old summary and cannot fail this entry delete.
     res.status(200).json({ message: "Entry and all associated interactions deleted successfully" })
 }
 

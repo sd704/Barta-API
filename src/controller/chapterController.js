@@ -4,7 +4,7 @@ const { Entry } = require("../model/entry")
 const { Comment } = require("../model/comment")
 const { Like } = require("../model/like")
 const { Bookmark } = require("../model/bookmark")
-const { enqueueJournalSummaryInBackground } = require("../services/journalSummaryService")
+const { refreshJournalSummary } = require("../services/journalSummaryService")
 
 // Adding, renaming and reordering chapters is done by PATCH "/api/journals/:jid" (updateJournal "chapters")
 
@@ -66,7 +66,7 @@ const deleteChapter = async (req, res) => {
         await session.endSession()
     }
 
-    enqueueJournalSummaryInBackground(journalId) // Summarize after everything is done
+    await refreshJournalSummary(journalId) // After commit. A summary failure keeps the old summary and does not fail this delete.
     res.status(200).json({ message: "Chapter and all associated entries deleted successfully" })
 }
 

@@ -7,13 +7,12 @@ const { BlockList } = require("../model/blocklist")
 const { Comment } = require("../model/comment")
 const { Like } = require("../model/like")
 const { Bookmark } = require("../model/bookmark")
-const { SummaryJob } = require("../model/summaryJob")
 const { Subscription } = require("../model/subscription")
 const { ENTRY_VISIBILITY_BY_JOURNAL } = require("../utils/constant")
 const { commentsAllowedForVisibility } = require("../policy/journalRules")
 const { canReadEntryWithAccess } = require("../policy/journalAccessPolicy")
 const { paginatedResponse } = require("../utils/apiResponse")
-const { enqueueJournalSummaryInBackground } = require("../services/journalSummaryService")
+const { refreshJournalSummary } = require("../services/journalSummaryService")
 
 // For sorting using query
 const SORTS = {
@@ -251,8 +250,12 @@ const updateJournal = async (req, res) => {
         await session.endSession()
     }
 
-    // After commit. A failed update throws before this line, so a rejected patch does not queue a summary.
-    if (refreshSummary) enqueueJournalSummaryInBackground(req.journal._id)
+    // After commit. A failed update throws before this line, so a rejected patch does not call the summary API.
+    // Waits for the new summary so the response has it. If the summary fails, data keeps the old aiSummary.
+    if (refreshSummary) {
+        const summary = await refreshJournalSummary(req.journal._id)
+        if (summary) updatedJournal.aiSummary = summary
+    }
 
     res.status(200).json({ message: "Journal updated successfully", data: updatedJournal })
 }
@@ -272,7 +275,6 @@ const deleteJournal = async (req, res) => {
             await Comment.deleteMany({ journalId: req.journal._id }, { session })
             await Follow.deleteMany({ journalId: req.journal._id }, { session })
             await Entry.deleteMany({ journalId: req.journal._id }, { session })
-            await SummaryJob.deleteMany({ journalId: req.journal._id }, { session })
 
             const deleted = await Journal.deleteOne({ _id: req.journal._id, authorId: req.userObj._id }, { session })
             if (!deleted.deletedCount) {

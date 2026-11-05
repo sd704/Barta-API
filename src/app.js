@@ -9,7 +9,6 @@ const searchRouter = require('./routes/searchRouter')
 const chatRouter = require('./routes/chatRouter')
 const journalRouter = require("./routes/journalRouter")
 const entryRouter = require("./routes/entryRouter")
-const { startSummaryWorker } = require("./services/journalSummaryService")
 const engagementRouter = require("./routes/engagementRouter")
 const commentRouter = require("./routes/commentRouter")
 const subscriptionRouter = require("./routes/subscriptionRouter")
@@ -53,8 +52,6 @@ initializeSocket(server)
 
 connectDB().then(() => {
     console.log("Database connected successfully")
-
-    startSummaryWorker()
 
     // We want our database to connect before the server starts listening
     // So this is a good approach to connect DB first, then listen to PORT
