@@ -151,8 +151,41 @@ const createJournal = async (req, res) => {
     res.status(201).json({ message: "Journal created successfully", data: journal })
 }
 
+// Rebuilds journal.chapters from the full list the client sent. Order is the position in the list.
+// An item with cid keeps that chapter (and its entries), an item without cid becomes a new chapter.
+// Throws if the list does not match the stored chapters, which aborts the transaction.
+const applyChapterList = (journal, chapterList) => {
+    const existing = new Map(journal.chapters.map(chapter => [chapter._id.toString(), chapter]))
+
+    for (const { cid } of chapterList) {
+        if (cid && !existing.has(cid)) {
+            const error = new Error(`Chapter does not belong to this journal: ${cid}`)
+            error.statusCode = 400
+            throw error
+        }
+    }
+
+    // Duplicates were rejected by validation, so equal counts means every existing chapter was sent.
+    // A smaller count means a chapter is missing, e.g. another tab added one. Chapters are never deleted from this list.
+    if (chapterList.filter(item => item.cid).length !== existing.size) {
+        const error = new Error("chapters must include every existing chapter exactly once")
+        error.statusCode = 409
+        throw error
+    }
+
+    journal.chapters = chapterList.map((item, index) => {
+        if (!item.cid) return { title: item.title, order: index + 1 } // New chapter
+
+        const chapter = existing.get(item.cid)
+        chapter.title = item.title
+        chapter.order = index + 1
+        return chapter
+    })
+}
+
 // For PATCH "/api/journals/:jid"
 // A visibility change rewrites entries that the new journal visibility does not allow.
+// "chapters" adds, renames and reorders chapters in the same save. Deleting a chapter stays on its own route.
 const updateJournal = async (req, res) => {
     const session = await mongoose.startSession()
     let updatedJournal
@@ -167,10 +200,10 @@ const updateJournal = async (req, res) => {
                 throw error
             }
 
-            const { updateChapters, ...updates } = req.validatedBody // Chapter title edits are applied separately
+            const { chapters, ...updates } = req.validatedBody // The chapter list is applied separately
 
-            // Summary input is the journal text plus chapter titles. Visibility and comments do not change that text.
-            refreshSummary = Boolean(updateChapters) || ["title", "about", "category", "progress"]
+            // Summary input is the journal text plus chapter titles and order. Visibility and comments do not change that text.
+            refreshSummary = Boolean(chapters) || ["title", "about", "category", "progress"]
                 .some(field => updates[field] !== undefined) //  Return true if any item does not match the condition
 
             const nextVisibility = updates.visibility || journal.visibility
@@ -210,17 +243,7 @@ const updateJournal = async (req, res) => {
 
             Object.assign(journal, updates) // Copy only the fields the client sent
 
-            if (updateChapters) {
-                for (const update of updateChapters) {
-                    const chapter = journal.chapters.id(update.cid) // In-memory lookup on the embedded array.
-                    if (!chapter) {
-                        const error = new Error(`Chapter does not belong to this journal: ${update.cid}`)
-                        error.statusCode = 400
-                        throw error // Aborts the transaction, including the entry rewrite above.
-                    }
-                    chapter.title = update.title
-                }
-            }
+            if (chapters) applyChapterList(journal, chapters) // A bad list aborts the transaction, including the entry rewrite above.
 
             updatedJournal = await journal.save({ session }) // Returns the saved document, which is sent back to the client.
         })

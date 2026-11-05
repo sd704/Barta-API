@@ -33,8 +33,8 @@ const getEntries = async (req, res) => {
     ))
 }
 
-// For GET "/api/journals/:jid/entries/:eid"
-// No DB call as loadEntry already fetched this entry
+// For GET "/api/entries/:eid"
+// No DB call as loadEntryJournal already fetched this entry
 const getEntry = async (req, res) => {
     res.status(200).json({ message: "Entry retrieved successfully", data: req.entry })
 }
@@ -115,7 +115,7 @@ const createEntry = async (req, res) => {
     res.status(201).json({ message: "Entry created successfully", data: createdEntry })
 }
 
-// For PATCH "/api/journals/:jid/entries/:eid", Journal Author only
+// For PATCH "/api/entries/:eid", Journal Author only
 const updateEntry = async (req, res) => {
     const session = await mongoose.startSession()
     let updatedEntry
@@ -123,7 +123,7 @@ const updateEntry = async (req, res) => {
     try {
         await session.withTransaction(async () => {
             const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            const entry = await Entry.findOne({ _id: req.params.eid, journalId: req.journal._id, authorId: req.userObj._id }).session(session)
+            const entry = await Entry.findOne({ _id: req.entry._id, authorId: req.userObj._id }).session(session)
 
             if (!journal || !entry) {
                 const error = new Error("Entry does not exist")
@@ -184,14 +184,14 @@ const updateEntry = async (req, res) => {
     res.status(200).json({ message: "Entry updated successfully", data: updatedEntry })
 }
 
-// For DELETE "/api/journals/:jid/entries/:eid", Journal Author only
+// For DELETE "/api/entries/:eid", Journal Author only
 const deleteEntry = async (req, res) => {
     const session = await mongoose.startSession()
 
     try {
         await session.withTransaction(async () => {
             const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            const entry = await Entry.findOne({ _id: req.params.eid, journalId: req.journal._id, authorId: req.userObj._id }).session(session)
+            const entry = await Entry.findOne({ _id: req.entry._id, authorId: req.userObj._id }).session(session)
 
             if (!journal || !entry) {
                 const error = new Error("Entry does not exist")

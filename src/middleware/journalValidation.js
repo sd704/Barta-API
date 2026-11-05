@@ -6,7 +6,31 @@ const { fail, isPlainObject, rejectExtraFields, cleanString, validateBoolean, va
 const CREATE_FIELDS = ["title", "about", "category", "visibility", "status", "cover", "pinned", "order", "progress", "chapters", "commentsAllowed"]
 
 // Fields accepted by Journal PATCH Body
-const UPDATE_FIELDS = ["title", "about", "category", "visibility", "status", "cover", "pinned", "order", "progress", "commentsAllowed", "updateChapters"]
+const UPDATE_FIELDS = ["title", "about", "category", "visibility", "status", "cover", "pinned", "order", "progress", "commentsAllowed", "chapters"]
+
+// For PATCH Journal "chapters": the full chapter list in the new order.
+// An item with cid is an existing chapter, an item without cid is a new chapter.
+const normalizeChapterList = (chapters) => {
+    if (!Array.isArray(chapters) || !chapters.length) throw new Error("chapters must be a non-empty array")
+    if (chapters.length > MAX_CHAPTERS) throw new Error(`chapters cannot contain more than ${MAX_CHAPTERS} items`)
+
+    const ids = new Set() // To detect duplicate chapters
+    return chapters.map((chapter, index) => {
+        if (!isPlainObject(chapter)) throw new Error(`chapters[${index}] must be an object`)
+        const extraFields = rejectExtraFields(chapter, ["cid", "title"])
+        if (extraFields) throw new Error(extraFields)
+
+        const title = cleanString(chapter.title, `chapters[${index}].title`, { required: true, max: CHAPTER_TITLE_MAX })
+        if (chapter.cid === undefined) return { title } // New chapter
+
+        if (!mongoose.Types.ObjectId.isValid(chapter.cid)) throw new Error(`Invalid chapter ID at chapters[${index}]`)
+
+        const cid = new mongoose.Types.ObjectId(chapter.cid).toString() // Same form as _id.toString()
+        if (ids.has(cid)) throw new Error("Duplicate chapter ID")
+        ids.add(cid)
+        return { cid, title }
+    })
+}
 
 // For GET "/api/journals/:jid" and GET "/api/users/:uid/journals"
 const validateJournalQuery = (req, res, next) => {
@@ -31,7 +55,8 @@ const validateJournalQuery = (req, res, next) => {
 }
 
 // For POST/PATCH Journal
-// creating=true makes title and category required and accepts chapters array
+// creating=true makes title and category required and accepts chapters as an array of titles.
+// creating=false accepts chapters as the full list of { cid, title } items in the new order.
 const normalizeJournalBody = (body, creating) => {
     if (!isPlainObject(body)) throw new Error("Request body must be an object")
 
@@ -88,24 +113,9 @@ const normalizeJournalBody = (body, creating) => {
         }))
     }
 
-    if (!creating && body.updateChapters !== undefined) {
-        if (!Array.isArray(body.updateChapters) || !body.updateChapters.length) {
-            throw new Error("updateChapters must be a non-empty array")
-        }
+    if (!creating && body.chapters !== undefined) {
+        normalized.chapters = normalizeChapterList(body.chapters)
 
-        const ids = new Set() // To detect duplicate chapters
-        normalized.updateChapters = body.updateChapters.map((chapter, index) => {
-            if (!isPlainObject(chapter)) throw new Error(`updateChapters[${index}] must be an object`)
-            const extraFields = rejectExtraFields(chapter, ["cid", "title"])
-            if (extraFields) throw new Error(extraFields)
-            if (!mongoose.Types.ObjectId.isValid(chapter.cid)) throw new Error(`Invalid chapter ID at updateChapters[${index}]`)
-            if (ids.has(chapter.cid)) throw new Error("Duplicate chapter ID")
-            ids.add(chapter.cid)
-            return {
-                cid: chapter.cid,
-                title: cleanString(chapter.title, "chapter title", { required: true, max: CHAPTER_TITLE_MAX })
-            }
-        })
     }
 
     return normalized
@@ -132,48 +142,10 @@ const validateUpdateJournal = (req, res, next) => {
     }
 }
 
-// For POST/PATCH Journal
-const validateChapterBody = (req, res, next) => {
-    try {
-        if (!isPlainObject(req.body)) throw new Error("Request body must be an object")
-        const unknown = rejectExtraFields(req.body, ["title"])
-        if (unknown) throw new Error(unknown)
-
-        req.validatedBody = {
-            title: cleanString(req.body.title, "title", { required: true, max: CHAPTER_TITLE_MAX })
-        }
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
-
-// For PATCH "/api/journals/:jid/chapters/reorder"
-const validateChapterReorderBody = (req, res, next) => {
-    try {
-        if (!isPlainObject(req.body)) throw new Error("Request body must be an object")
-
-        const unknown = rejectExtraFields(req.body, ["chaptersInOrder"])
-        if (unknown) throw new Error(unknown)
-
-        const ids = req.body.chaptersInOrder
-        if (!Array.isArray(ids) || !ids.length) throw new Error("chaptersInOrder must be a non-empty array")
-        if (ids.some(id => !mongoose.Types.ObjectId.isValid(id))) throw new Error("chaptersInOrder contains an invalid ID")
-        if (new Set(ids).size !== ids.length) throw new Error("chaptersInOrder contains duplicate IDs")
-
-        req.validatedBody = { chaptersInOrder: ids }
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
-
 module.exports = {
     validateIds,
     validateJournalQuery,
     validateCreateJournal,
-    validateUpdateJournal,
-    validateChapterBody,
-    validateChapterReorderBody
+    validateUpdateJournal
 }
 

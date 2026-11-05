@@ -112,7 +112,7 @@ const validateCreateEntry = (req, res, next) => {
     }
 }
 
-// For PATCH "/api/journals/:jid/entries/:eid"
+// For PATCH "/api/entries/:eid"
 const validateUpdateEntry = (req, res, next) => {
     try {
         req.validatedBody = normalizeEntryBody(req.body, false)

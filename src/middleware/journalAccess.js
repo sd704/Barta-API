@@ -49,17 +49,22 @@ const requireEntriesAccess = (req, res, next) => {
     return res.status(403).json({ message: "Entries are hidden for this journal" })
 }
 
-// Load Entry from DB for Routes with :eid 
-// Runs after "loadJournal" so we can check if entry belongs to journal
-const loadEntry = async (req, res, next) => {
-    const entry = await Entry.findOne({ _id: req.params.eid, journalId: req.journal._id })
+// For Routes with only :eid. The entry stores the journal it belongs to.
+// Sets req.entry and req.journal, so the access checks after it work the same as on Routes with :jid
+const loadEntryJournal = async (req, res, next) => {
+    const entry = await Entry.findById(req.params.eid)
     if (!entry) return res.status(404).json({ message: "Entry does not exist" })
+
+    const journal = await Journal.findById(entry.journalId)
+    if (!journal) return res.status(404).json({ message: "Journal does not exist" })
+
     req.entry = entry
+    req.journal = journal
     next()
 }
 
 // Hide Entry if no access, after entry document is loaded (we need entry doc to check access)
-// Must run after "loadEntry" and "resolveJournalAccess"
+// Must run after "loadEntryJournal" and "resolveJournalAccess"
 const requireEntryReadAccess = (req, res, next) => {
     if (!canReadEntryWithAccess(req.entry, req.journalAccess)) {
         return res.status(404).json({ message: "Entry does not exist" })
@@ -78,7 +83,7 @@ module.exports = {
     requireJournalAuthor,
     resolveJournalAccess,
     requireEntriesAccess,
-    loadEntry,
+    loadEntryJournal,
     requireEntryReadAccess,
     rejectJournalAuthor
 }
