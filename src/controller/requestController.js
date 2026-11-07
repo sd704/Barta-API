@@ -1,5 +1,8 @@
+const mongoose = require("mongoose")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
+const { Journal } = require("../model/journal")
+const { Follow } = require("../model/follow")
 const { SAFE_DATA } = require("../utils/constant")
 
 // Helper Functions
@@ -125,7 +128,35 @@ const removeRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
     const participants = [userId.toString(), targetUserId.toString()].sort().join('|')
 
-    const removed = await Connection.findOneAndDelete({ participants, status: "accepted" })
+    const session = await mongoose.startSession()
+    let removed
+
+    try {
+        await session.withTransaction(async () => {
+            removed = await Connection.findOneAndDelete({ participants, status: "accepted" }, { session })
+            if (!removed) return
+
+            // Each person may follow the other's friends-only journals. Those follows end with the friendship.
+            // Public, selected, subscribed, and private follows stay.
+            const journals = await Journal.find({ authorId: { $in: [userId, targetUserId] }, visibility: "friends" })
+                .select("_id authorId").session(session)
+
+            for (const journal of journals) {
+                const followerId = journal.authorId.equals(userId) ? targetUserId : userId
+                const deleted = await Follow.findOneAndDelete({ followerId, journalId: journal._id }, { session })
+
+                if (deleted?.status === "active") {
+                    await Journal.updateOne(
+                        { _id: journal._id, followerCount: { $gt: 0 } },
+                        { $inc: { followerCount: -1 } },
+                        { session }
+                    )
+                }
+            }
+        })
+    } finally {
+        await session.endSession()
+    }
 
     if (removed) {
         await removed.populate("senderId", SAFE_DATA)

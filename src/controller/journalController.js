@@ -104,6 +104,8 @@ const getJournal = async (req, res) => {
         entriesByChapter.get(key).push(entry)
     }
 
+    journal.view = access.mode // Full, Preview or Teaser
+
     if (access.mode !== "full") {
         delete journal.progress
         delete journal.endedAt
@@ -238,6 +240,19 @@ const updateJournal = async (req, res) => {
                         { session }
                     )
                 }
+
+                // Nobody needs approval on a public journal, so everyone who was waiting is approved now.
+                if (updates.visibility === "public") {
+                    const approved = await Follow.updateMany(
+                        { journalId: journal._id, status: "pending" },
+                        { $set: { status: "active" } },
+                        { session }
+                    )
+                    if (approved.modifiedCount) {
+                        journal.$inc("followerCount", approved.modifiedCount) // Only active followers are counted.
+                    }
+                }
+
             }
 
             Object.assign(journal, updates) // Copy only the fields the client sent

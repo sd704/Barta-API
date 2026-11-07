@@ -3,6 +3,7 @@ const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { BlockList } = require("../model/blocklist")
 const { requireEntriesAccess, requireEntryReadAccess } = require("./journalAccess")
+const { commentsClosedMessage } = require("../policy/journalRules")
 
 // Comment access check -> Used after resolveJournalAccess/requireEntriesAccess
 const requireCommentAccess = (req, res, next) => {
@@ -14,10 +15,10 @@ const requireCommentAccess = (req, res, next) => {
 
 // Check is comment allowed on Journal/Entry
 const requireCommentsOpen = (req, res, next) => {
-    if (req.journal.visibility === "private") return res.status(403).json({ message: "Comments are not allowed on a private journal" })
-    if (!req.journal.commentsAllowed) return res.status(403).json({ message: `Comments are turned off for '${req.journal.title}'` })
-    if (req.entry && req.entry.visibility === "private") return res.status(403).json({ message: "Comments are not allowed on a private entry" })
-    if (req.entry && !req.entry.commentsAllowed) return res.status(403).json({ message: `Comments are turned off for '${req.entry.title}'` })
+    const message = commentsClosedMessage(req.journal, req.entry)
+    if (message) {
+        return res.status(403).json({ message })
+    }
     next()
 }
 

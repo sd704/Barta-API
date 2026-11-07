@@ -30,5 +30,14 @@ const commentsAllowedForVisibility = (visibility, commentsAllowed) => {
     return false
 }
 
-module.exports = { entryVisibilityForJournal, commentsAllowedForVisibility }
+// null means comments are open. The journal is checked before the entry, so a closed journal is the message the client sees.
+const commentsClosedMessage = (journal, entry) => {
+    if (journal.visibility === "private") return "Comments are not allowed on a private journal"
+    if (!journal.commentsAllowed) return `Comments are turned off for '${journal.title}'`
+    if (entry && entry.visibility === "private") return "Comments are not allowed on a private entry"
+    if (entry && !entry.commentsAllowed) return `Comments are turned off for '${entry.title}'`
+    return null
+}
+
+module.exports = { entryVisibilityForJournal, commentsAllowedForVisibility, commentsClosedMessage }
 

@@ -94,21 +94,19 @@ const initializeSocket = (server) => {
         socket.on("sendMessage", async ({ targetUserId, text }) => {
             try {
 
-                // Check if user is friend or blocked
-                const connectionId = [loggedInUserId, targetUserId].sort().join('|')
-                const [isFriend, isBlocked] = await Promise.all([
-                    Connection.findOne({ participants: connectionId }).lean(),
-                    BlockList.findOne({ participants: connectionId }).lean()
-                ])
-
-                if (!isFriend || !!isBlocked) {
-                    throw new Error("SOCKET_ERROR: SEND_MESSAGE_DENIED")
-                }
-
-                // id and text validation
+                // id and text validation, before any DB lookup uses targetUserId
                 if (!mongoose.Types.ObjectId.isValid(targetUserId) || typeof text !== "string" || !text.trim()) {
                     return
                 }
+
+                // Only accepted friends can message. A pending, ignored, or rejected connection is not enough, and a block stops both sides.
+                const connectionId = [loggedInUserId, targetUserId].sort().join('|')
+                const [friendConnection, isBlocked] = await Promise.all([
+                    Connection.findOne({ participants: connectionId, status: "accepted" }).lean(),
+                    BlockList.findOne({ participants: connectionId }).lean()
+                ])
+
+                if (!friendConnection || !!isBlocked) throw new Error("SOCKET_ERROR: SEND_MESSAGE_DENIED")
 
                 const participants = [loggedInUserId, targetUserId].sort()
                 const newMessage = { senderId: loggedInUserId, text: text.slice(0, 100) }
@@ -128,7 +126,7 @@ const initializeSocket = (server) => {
 
                 const targetUserData = chat.participants.find(user => !user._id.equals(loggedInUserId))
                 const loggedInUserData = chat.participants.find(user => !user._id.equals(targetUserId))
-                const connectionData = { status: isFriend.status, senderId: isFriend.senderId, blockedByMe: false, blockedMe: false, }
+                const connectionData = { status: friendConnection.status, senderId: friendConnection.senderId, blockedByMe: false, blockedMe: false, }
 
                 // emit -> sending msg to all clients in a chat
                 io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: targetUserData, connectionData })

@@ -7,6 +7,7 @@ const { BlockList } = require("../model/blocklist")
 const { httpError } = require("../utils/httpError")
 const { loadReaderContextForJournal, blockedUserIds } = require("../services/journalReaderContext")
 const { entryInteractionError, fullJournalAccessError } = require("../policy/journalAccessPolicy")
+const { commentsClosedMessage } = require("../policy/journalRules")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { PUBLIC_PROFILE_FIELDS } = require("../utils/constant")
 const { publicProfile } = require("../utils/publicProfile")
@@ -25,13 +26,6 @@ const formatComment = (comment, author, options = {}) => ({
     ...(options.hiddenByParent !== undefined ? { hiddenByParent: options.hiddenByParent } : {}), // In DB, the reply visibility can stay visible while parent is hidden
     ...(options.replyCount !== undefined ? { replyCount: options.replyCount } : {}) // Omitted on replies
 })
-
-// Error message for commentsAllowed=false
-const commentsClosedMessage = (journal, entry) => {
-    if (journal.visibility === "private") return "Comments are not allowed on a private journal"
-    if (entry && entry.visibility === "private") return "Comments are not allowed on a private entry"
-    return `Comments are turned off for '${journal.commentsAllowed ? entry.title : journal.title}'`
-}
 
 // Recheck journal and entry inside a DB write transaction
 const assertReadableContext = async (req, session) => {
@@ -61,9 +55,8 @@ const assertReadableContext = async (req, session) => {
 // Check journal/entry is private or commentsAllowed=true, Used for create comment and reply comment
 const assertWritableContext = async (req, session) => {
     const context = await assertReadableContext(req, session)
-    const journalClosed = context.journal.visibility === "private" || !context.journal.commentsAllowed
-    const entryClosed = context.entry && (context.entry.visibility === "private" || !context.entry.commentsAllowed)
-    if (journalClosed || entryClosed) throw httpError(403, commentsClosedMessage(context.journal, context.entry))
+    const message = commentsClosedMessage(context.journal, context.entry) // Same check as requireCommentsOpen, on the copies read inside the transaction.
+    if (message) throw httpError(403, message)
     return context
 }
 
@@ -117,9 +110,7 @@ const listComments = async (req, res) => {
 
     // Friends, selected, and subscribed readers only reach this list after the access middleware.
     // Private journals and entries stay readable by the author, but the composer stays closed.
-    const commentsOpen = req.journal.visibility !== "private" && req.journal.commentsAllowed && (
-        req.entry ? (req.entry.visibility !== "private" && req.entry.commentsAllowed) : true
-    )
+    const commentsOpen = !commentsClosedMessage(req.journal, req.entry)
 
     let message = "Comments retrieved successfully"
     if (!total && commentsOpen) message = "No comments yet"
