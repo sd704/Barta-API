@@ -86,8 +86,7 @@ const findUserById = async (req, res, next) => {
         connectionData: {
             status: existing ? existing.status : null,
             senderId: existing ? existing.senderId : null,
-            blockedByMe: blocked ? (blocked.senderId.toString() === userId.toString()) : false,
-            blockedMe: blocked ? (blocked.senderId.toString() !== userId.toString()) : false,
+            blockedByMe: blocked ? (blocked.senderId.toString() === userId.toString()) : false
         }
     }
 

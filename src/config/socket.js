@@ -7,10 +7,26 @@ const socket = require('socket.io')
 const { Chat } = require('../model/chat')
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
-const { SAFE_DATA } = require("../utils/constant")
+const { SAFE_DATA, CHAT_USER_FIELDS, MESSAGE_TEXT_MAX } = require("../utils/constant")
+const { visibleChatUser } = require("../utils/publicProfile")
 
 // Simple Map of online user IDs and count no. of logged in devices
 const onlineUsers = new Map() // [ {uid, count} ]
+
+// Messages and typing share one rule: the other profile exists, the connection is accepted, and neither side blocked.
+// Returns the accepted connection, or null when any part fails.
+const findChatConnection = async (userId, targetUserId) => {
+    if (typeof targetUserId !== "string" || !mongoose.Types.ObjectId.isValid(targetUserId)) return null
+
+    const participants = [userId, targetUserId].sort().join("|")
+    const [connection, isBlocked, targetExists] = await Promise.all([
+        Connection.findOne({ participants, status: "accepted" }).lean(),
+        BlockList.findOne({ participants }).lean(),
+        User.exists({ _id: targetUserId })
+    ])
+
+    return (connection && !isBlocked && targetExists) ? connection : null
+}
 
 const initializeSocket = (server) => {
     const io = socket(server, {
@@ -91,29 +107,25 @@ const initializeSocket = (server) => {
             }
         })
 
-        socket.on("sendMessage", async ({ targetUserId, text }) => {
+        socket.on("sendMessage", async (payload) => {
             try {
+                const { targetUserId, text } = payload ?? {}
 
                 // id and text validation, before any DB lookup uses targetUserId
                 if (!mongoose.Types.ObjectId.isValid(targetUserId) || typeof text !== "string" || !text.trim()) {
                     return
                 }
 
-                // Only accepted friends can message. A pending, ignored, or rejected connection is not enough, and a block stops both sides.
-                const connectionId = [loggedInUserId, targetUserId].sort().join('|')
-                const [friendConnection, isBlocked] = await Promise.all([
-                    Connection.findOne({ participants: connectionId, status: "accepted" }).lean(),
-                    BlockList.findOne({ participants: connectionId }).lean()
-                ])
-
-                if (!friendConnection || !!isBlocked) throw new Error("SOCKET_ERROR: SEND_MESSAGE_DENIED")
+                // Only accepted friends can message. A block stops both sides.
+                const friendConnection = await findChatConnection(loggedInUserId, targetUserId)
+                if (!friendConnection) throw new Error("SOCKET_ERROR: SEND_MESSAGE_DENIED")
 
                 const participants = [loggedInUserId, targetUserId].sort()
-                const newMessage = { senderId: loggedInUserId, text: text.slice(0, 100) }
+                const newMessage = { senderId: loggedInUserId, text: text.slice(0, MESSAGE_TEXT_MAX) }
 
                 // Check if chat exists, if not upsert
                 let chat = await Chat.findOneAndUpdate(
-                    { participants },
+                    { participantsKey: participants.join("|") },
                     {
                         $push: { messages: newMessage },
                         $setOnInsert: { participants }
@@ -122,11 +134,11 @@ const initializeSocket = (server) => {
                         returnDocument: "after",
                         upsert: true
                     }
-                ).populate({ path: "participants", select: SAFE_DATA }).lean()
+                ).populate({ path: "participants", select: CHAT_USER_FIELDS }).lean()
 
-                const targetUserData = chat.participants.find(user => !user._id.equals(loggedInUserId))
-                const loggedInUserData = chat.participants.find(user => !user._id.equals(targetUserId))
-                const connectionData = { status: friendConnection.status, senderId: friendConnection.senderId, blockedByMe: false, blockedMe: false, }
+                const targetUserData = visibleChatUser(chat.participants.find(user => !user._id.equals(loggedInUserId)))
+                const loggedInUserData = visibleChatUser(chat.participants.find(user => !user._id.equals(targetUserId)))
+                const connectionData = { status: friendConnection.status, senderId: friendConnection.senderId, blockedByMe: false }
 
                 // emit -> sending msg to all clients in a chat
                 io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: targetUserData, connectionData })
@@ -137,47 +149,63 @@ const initializeSocket = (server) => {
             }
         })
 
-        socket.on("updateMsgSeen", async ({ stringChatId, stringMessageIds }) => {
+        socket.on("updateMsgSeen", async (payload) => {
+            // Only a person in the chat can mark messages, and only the other person's unread messages from the list are marked.
+            // The caller always gets the update, because the read state is theirs. The other person only gets it while chatting is allowed.
+            try {
+                const { stringChatId, stringMessageIds } = payload ?? {}
+                const isId = (id) => typeof id === "string" && mongoose.Types.ObjectId.isValid(id)
+                if (!isId(stringChatId) || !Array.isArray(stringMessageIds) || stringMessageIds.length === 0 || !stringMessageIds.every(isId)) return
 
-            const chatId = new mongoose.Types.ObjectId(stringChatId)
-            const messageIds = stringMessageIds.map(id => new mongoose.Types.ObjectId(id))
+                const userId = socket.user._id
+                const chatId = new mongoose.Types.ObjectId(stringChatId)
+                const messageIds = stringMessageIds.map(id => new mongoose.Types.ObjectId(id))
 
-            const chat = await Chat.findOne({ _id: chatId }).select('participants')
-            if (!chat) { return }
+                // The participant check is the access check. updateOne then skips ids that are not in this chat, are mine, or are already read.
+                const chat = await Chat.findOne({ _id: chatId, participants: userId }).select("participants")
+                if (!chat) return
 
-            // Updates messages the belongs to chat (chat id), and sender != loggedInUser
-            const result = await Chat.updateOne(
-                { _id: chatId, "messages._id": { $in: messageIds } },
-                { $set: { "messages.$[msg].isRead": true } },
-                {
-                    arrayFilters: [
-                        {
-                            "msg.senderId": { $ne: loggedInUserId },
+                const result = await Chat.updateOne(
+                    { _id: chatId, participants: userId },
+                    { $set: { "messages.$[msg].isRead": true } },
+                    {
+                        arrayFilters: [{
                             "msg._id": { $in: messageIds },
+                            "msg.senderId": { $ne: userId },
                             "msg.isRead": false
-                        },
-                    ]
+                        }]
+                    }
+                )
+
+                if (result.modifiedCount === 0) return
+
+                const peerId = chat.participants.find(id => !id.equals(userId))?.toString()
+
+                io.to(loggedInUserId).emit("msgSeenSuccess", { receiverId: peerId, msgReceiverId: loggedInUserId, stringChatId, stringMessageIds })
+
+                if (peerId && await findChatConnection(loggedInUserId, peerId)) {
+                    io.to(peerId).emit("msgSeenSuccess", { receiverId: loggedInUserId, msgReceiverId: loggedInUserId, stringChatId, stringMessageIds })
                 }
-            )
-
-            const success = (result.matchedCount === 1 && result.modifiedCount > 0)
-            if (success) {
-                const senderId = chat.participants.find(user => !user._id.equals(loggedInUserId))
-                io.to(senderId.toString()).emit("msgSeenSuccess", { receiverId: loggedInUserId, msgReceiverId: loggedInUserId, stringChatId, stringMessageIds })
-                io.to(loggedInUserId).emit("msgSeenSuccess", { receiverId: senderId.toString(), msgReceiverId: loggedInUserId, stringChatId, stringMessageIds })
+            } catch (err) {
+                console.error(err)
             }
-
-            // Updating on server, better to update on mongo db
-            // const chat = await Chat.findById(chatId)
-            // chat.messages.forEach(msg => { if (msg.senderId.toString() !== loggedInUserId.toString()) { msg.isRead = true } })
-            // await chat.save()
-
-            // notify sender
-            // socket.to(chat.participants).emit("messagesSeen", { chatId })
         })
 
-        socket.on("typing", ({ targetUserId, status }) => {
-            io.to(targetUserId).emit("typing", { userId: loggedInUserId, status })
+        // Typing is only relayed between accepted friends who have not blocked each other. Anything else is ignored.
+        socket.on("typing", async (payload) => {
+            try {
+                const { targetUserId, status } = payload ?? {}
+
+                // status validation
+                if (typeof status !== "boolean") return
+
+                // Not a friend
+                if (!await findChatConnection(loggedInUserId, targetUserId)) return
+
+                io.to(targetUserId).emit("typing", { userId: loggedInUserId, status })
+            } catch (err) {
+                console.error(err)
+            }
         })
 
         // socket.emit("errorMessage", {

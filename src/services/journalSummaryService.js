@@ -29,7 +29,7 @@ const buildSummaryPayload = async journalId => {
     return {
         journal: {
             title: journal.title,
-            authorName: author?.fullName || [author?.firstName, author?.lastName].filter(Boolean).join(" "),
+            authorName: author?.fullName,
             about: journal.about,
             category: journal.category,
             progress: journal.progress

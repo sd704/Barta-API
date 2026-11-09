@@ -2,32 +2,38 @@ const { Chat } = require("../model/chat")
 const { User } = require("../model/user")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
-const { SAFE_DATA } = require("../utils/constant")
-const mongoose = require('mongoose')
+const { visibleChatUser, hiddenChatUser } = require("../utils/publicProfile")
+const { CHAT_USER_FIELDS } = require("../utils/constant")
+const mongoose = require("mongoose")
 
-// Get messages between 2 users
-const getMessages = async (req, res, next) => {
-    const userId = req.userObj._id
+const emptyConnection = { status: null, senderId: null, blockedByMe: false }
+
+// Get messages between 2 users. Profiles are not included. A deleted account can still have chats.
+const getMessages = async (req, res) => {
+    const userId = req.userObj._id.toString()
     const targetUserId = req.params.uid
-    const participants = [userId, targetUserId].sort()
 
-    // Check if chat exists
-    const chat = await Chat.findOne({ participants: participants }).populate({ path: "participants", select: SAFE_DATA }).lean()
-    if (chat) {
-        return res.status(200).json({ message: `Messages`, data: chat })
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+        return res.status(404).json({ message: "User not found!" })
     }
 
-    res.status(404).json({ message: `No messages found!` })
+    const participantsKey = [req.userObj._id.toString(), targetUserId].sort().join("|")
+    const chat = await Chat.findOne({ participantsKey }).select("messages").lean()
+
+    if (!chat) return res.status(404).json({ message: "No messages found!" })
+
+    res.status(200).json({
+        message: "Messages",
+        data: { chatId: chat._id, uid: targetUserId, messages: chat.messages }
+    })
 }
 
 // Get all users with whom loggedInUser has previously chatted
-const getChats = async (req, res, next) => {
+const getChats = async (req, res) => {
     const userId = req.userObj._id
 
     const chats = await Chat.aggregate([
-        {
-            $match: { participants: userId }
-        },
+        { $match: { participants: userId } },
         {
             $addFields: {
                 lastMessage: { $arrayElemAt: ["$messages", -1] },
@@ -39,78 +45,70 @@ const getChats = async (req, res, next) => {
                             cond: { $and: [{ $ne: ["$$message.senderId", userId] }, { $eq: ["$$message.isRead", false] }] }
                         }
                     }
+                },
+                // Taken from the stored ids, so a deleted account still has an id for /messages/:uid.
+                peerId: {
+                    $arrayElemAt: [
+                        { $filter: { input: "$participants", as: "id", cond: { $ne: ["$$id", userId] } } },
+                        0
+                    ]
                 }
             }
         },
-        {
-            $lookup: { from: "users", localField: "participants", foreignField: "_id", as: "participants" }
-        },
-        {
-            $project: {
-                unreadCount: 1,
-                lastMessage: 1,
-                participants: {
-                    $map: {
-                        input: "$participants",
-                        as: "participant",
-                        in: {
-                            _id: "$$participant._id", firstName: "$$participant.firstName", lastName: "$$participant.lastName", email: "$$participant.email",
-                            about: "$$participant.about", description: "$$participant.description", age: "$$participant.age", gender: "$$participant.gender", pfp: "$$participant.pfp"
-                        }
-                    }
-                }
-            }
-        }
+        { $project: { unreadCount: 1, lastMessage: 1, peerId: 1 } }
     ])
 
-    // const chats = await Chat.find(
-    //     { participants: new mongoose.Types.ObjectId(userId) }, // Find chats where loggedInUser is one of the participants
-    //     { participants: 1, messages: { $slice: -1 } } // projection -> choosing which fields are included or excluded in the result.
-    // ).populate({ path: "participants", select: SAFE_DATA }).lean()
-
     // remove empty chats
-    const validChats = chats.filter(chat => chat.lastMessage)
+    const validChats = chats.filter(chat => chat.lastMessage && chat.peerId)
 
     // List of user Ids
-    const targetUserIds = validChats.map(chat => chat.participants.find(user => user._id.toString() !== userId.toString())._id)
-    const participantKeys = targetUserIds.map(targetId => [userId.toString(), targetId.toString()].sort().join("|"))
+    const peerIds = validChats.map(chat => chat.peerId)
+    const participantKeys = peerIds.map(peerId => [userId.toString(), peerId.toString()].sort().join("|"))
 
-    // Connections and Blocks
-    const [connections, blocks] = await Promise.all([
+    const [users, connections, blocks] = await Promise.all([
+        User.find({ _id: { $in: peerIds } }).select(CHAT_USER_FIELDS).lean(),
         Connection.find({ participants: { $in: participantKeys } }).lean(),
         BlockList.find({ participants: { $in: participantKeys } }).lean()
     ])
 
-    const connectedSet = new Set(connections.map(conn => conn.participants)) // set of participantKeys where connection exists
-    const blockedSet = new Set(blocks.map(block => block.participants)) // set of participantKeys where blocked
+    const userById = new Map(users.map(user => [user._id.toString(), user]))
+    const connectionByKey = new Map(connections.map(connection => [connection.participants, connection]))
+    const blockByKey = new Map(blocks.map(block => [block.participants, block]))
 
-    const filteredChats = validChats.map(chat => {
+    const data = validChats.map(chat => {
+        const peerId = chat.peerId
+        const participantKey = [userId.toString(), peerId.toString()].sort().join("|")
+        const user = userById.get(peerId.toString())
+        const connection = connectionByKey.get(participantKey)
+        const block = blockByKey.get(participantKey)
+        const blockedByThem = Boolean(block && !block.senderId.equals(userId))
 
-        // chat participants is an array
-        const otherUser = chat.participants.find(user => user._id.toString() !== userId.toString())
-        const otherUserId = otherUser._id.toString()
-        const participantKey = [userId.toString(), otherUserId].sort().join("|")
-
-        const isConnected = connectedSet.has(participantKey)
-        const connectionDetails = connections.find(obj => obj.participants === participantKey)
-        const isBlocked = blockedSet.has(participantKey)
-        const blockDetails = blocks.find(obj => obj.participants === participantKey)
+        // A missing account and a person who blocked me look the same. Their profile is not sent.
+        if (!user || blockedByThem) {
+            return {
+                _id: chat._id,
+                user: hiddenChatUser(peerId),
+                lastMessage: chat.lastMessage,
+                unreadCount: chat.unreadCount,
+                connectionData: emptyConnection
+            }
+        }
 
         return {
             _id: chat._id,
-            userData: otherUser,
+            user: visibleChatUser(user),
             lastMessage: chat.lastMessage,
             unreadCount: chat.unreadCount,
             connectionData: {
-                status: isConnected ? (connectionDetails.status) : null,
-                senderId: isConnected ? (connectionDetails.senderId) : null,
-                blockedByMe: isBlocked ? (blockDetails.senderId.toString() === userId.toString()) : false,
-                blockedMe: isBlocked ? (blockDetails.senderId.toString() !== userId.toString()) : false,
+                status: connection ? connection.status : null,
+                senderId: connection ? connection.senderId : null,
+                blockedByMe: Boolean(block)
             }
         }
     })
 
-    res.status(200).json({ message: `Existing Chats`, data: filteredChats })
+    res.status(200).json({ message: "Existing Chats", data })
 }
 
 module.exports = { getMessages, getChats }
+

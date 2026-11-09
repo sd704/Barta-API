@@ -5,9 +5,9 @@ const JWTKEY = process.env.JWTKEY
 const { SAFE_DATA } = require("../utils/constant")
 
 const userSchema = new mongoose.Schema({
-    firstName: { type: String, trim: true },
-    lastName: { type: String, trim: true },
-    fullName: { type: String, trim: true, index: true }, // For Indexing
+    firstName: { type: String, trim: true, required: true },
+    lastName: { type: String, trim: true, required: true },
+    fullName: { type: String, trim: true, index: true }, // For Indexing. Set on save from first and last name.
     email: {
         type: String, unique: true, required: true, lowercase: true, trim: true,
         // Custom Validation
@@ -60,6 +60,27 @@ userSchema.methods.filterSafeData = function () {
     const userObj = this
     return Object.fromEntries(Object.entries(userObj.toJSON()).filter(([key]) => SAFE_DATA.includes(key)))
 }
+
+// Changed fields only, using the stored values. A first or last name change also includes fullName.
+userSchema.methods.filterUpdates = function (updates) {
+    const saved = this.filterSafeData()
+    const updatedFields = Object.fromEntries(Object.keys(updates).map(field => [field, saved[field] ?? null]))
+    if (updates.firstName !== undefined || updates.lastName !== undefined) {
+        updatedFields.fullName = saved.fullName
+    }
+    return updatedFields
+}
+
+// One safe profile, plus the changed fields taken from it. 
+userSchema.methods.filterUpdates = function (updates) {
+    const data = this.filterSafeData()
+    const updatedFields = Object.fromEntries(Object.keys(updates).map(field => [field, data[field] ?? null]))
+    if (updates.firstName !== undefined || updates.lastName !== undefined) {
+        updatedFields.fullName = saved.fullName // A first or last name change also includes fullName.
+    }
+    return { data, updatedFields }
+}
+
 
 const User = mongoose.model('User', userSchema)
 module.exports = { User }

@@ -51,7 +51,9 @@ const updateUser = async (req, res, next) => {
 
     const updates = ALLOWED_UPDATES.reduce((acc, field) => {
         // Check is field is present, and field has a different value
-        if (req.body[field] !== undefined && req.body[field] !== req.userObj[field]) acc[field] = req.body[field]
+        if (req.body[field] !== undefined && req.body[field] !== req.userObj[field]) {
+            acc[field] = req.body[field]
+        }
         return acc
     }, {})
 
@@ -65,7 +67,8 @@ const updateUser = async (req, res, next) => {
 
     // Save user object
     const updatedUserData = await req.userObj.save()
-    res.status(200).json({ message: `User data updated successfully`, data: updatedUserData.filterSafeData(), updatedFields: updates })
+    const { data, updatedFields } = updatedUserData.filterUpdates(updates)
+    res.status(200).json({ message: `User data updated successfully`, data, updatedFields })
 }
 
 const deleteUser = async (req, res, next) => {

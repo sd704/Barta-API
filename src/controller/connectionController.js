@@ -36,7 +36,8 @@ const existingConnections = async (req, res, next) => {
         status: "accepted",
         $or: [{ senderId: userId, receiverId: { $nin: userBlockList } }, { senderId: { $nin: userBlockList }, receiverId: userId }]
     }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
-    const responseObj = searchResult.filter(item => item.senderId && item.receiverId).map(item => item.senderId._id.toString() === userId.toString() ? item.receiverId : item.senderId)
+    const responseObj = searchResult.filter(item => item.senderId && item.receiverId)
+        .map(item => item.senderId._id.toString() === userId.toString() ? item.receiverId : item.senderId)
     return res.status(200).json({ message: `List of connected users`, data: responseObj })
 }
 

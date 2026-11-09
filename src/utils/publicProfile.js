@@ -9,13 +9,26 @@ const publicProfile = user => user ? ({
     about: user.about
 }) : null
 
-const displayName = user =>
-    user?.fullName ||
-    [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
-    "This user"
+// A missing user, such as a deleted follower, has no stored name.
+const displayName = user => user?.fullName || "This user"
+
+// Inbox and live message cards. An unknown user keeps the id used by /messages/:uid and nothing else.
+const visibleChatUser = user => ({
+    _id: user._id,
+    fullName: user.fullName,
+    firstName: user.firstName || "",
+    pfp: user.pfp ?? null,
+    email: user.email,
+    isUnknown: false
+})
+
+const hiddenChatUser = id => ({ _id: id, isUnknown: true })
 
 module.exports = {
     publicProfile,
-    displayName
+    displayName,
+    visibleChatUser,
+    hiddenChatUser
 }
+
 
