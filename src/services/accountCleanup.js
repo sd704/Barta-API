@@ -9,9 +9,14 @@ const { Chat } = require("../model/chat")
 const { User } = require("../model/user")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
-const { decrementCommentCount } = require("./commentCount")
+const { decrementFollowerCount } = require("./followCounter")
+const { decrementLikeCount } = require("./likeCounter")
+const { decrementBookmarkCount } = require("./bookmarkCounter")
 
-// Removes everything a user owns or did, so nothing is left pointing at a deleted account. Chats stay until last user has valid account.
+// Removes everything a user owns or did. Comments they wrote on someone else's journal stay and show as Deleted User.
+// Those comments are deleted when that journal is deleted, including when its author deletes their account.
+// Chats stay until the last participant still has an account.
+
 const deleteAccountData = async (userId, session) => {
 
     // User Journals
@@ -25,47 +30,32 @@ const deleteAccountData = async (userId, session) => {
     // Likes given by User
     const likes = await Like.find({ userId }, "entryId", { session }).lean()
 
-    // Update likeCount 
+    // Own entries are deleted below, so their counts do not need to move.
+    const onSomeoneElsesEntry = { journalId: { $nin: ownJournalIds } }
+
+    // Decrement likeCount
     if (likes.length) {
-        await Entry.updateMany(
-            { _id: { $in: likes.map(like => like.entryId) }, journalId: { $nin: ownJournalIds }, likeCount: { $gt: 0 } },
-            { $inc: { likeCount: -1 } },
-            { session, timestamps: false }
-        )
+        await decrementLikeCount(likes.map(like => like.entryId), session, onSomeoneElsesEntry)
+    }
+
+    // Bookmarks given by User
+    const bookmarks = await Bookmark.find({ userId }, "entryId", { session }).lean()
+
+    // Decrement bookmarkCount
+    if (bookmarks.length) {
+        await decrementBookmarkCount(bookmarks.map(bookmark => bookmark.entryId), session, onSomeoneElsesEntry)
     }
 
     await Like.deleteMany({ userId }, { session }) // Likes given by User
     await Bookmark.deleteMany({ userId }, { session }) // Bookmarks given by User
-
-    const myComments = { userId, journalId: { $nin: ownJournalIds } } // Comments made by User, not on their own journals
-    const topLevel = await Comment.find({ ...myComments, parentId: null }, "_id", { session }).lean() // Top level comments made by User
-
-    // Either its User's comment, or the parentID is a User's comment. This will delete all comments.
-    const toBeDeleted = { $or: [myComments, { parentId: { $in: topLevel.map(comment => comment._id) } }] }
-
-    // Comment count group by each entry and each journal
-    const counters = await Comment.aggregate([
-        { $match: toBeDeleted },
-        { $group: { _id: { journalId: "$journalId", entryId: "$entryId" }, amount: { $sum: 1 } } }
-    ]).session(session)
-
-    await Comment.deleteMany(toBeDeleted, { session })
-    for (const { _id, amount } of counters) {
-        await decrementCommentCount(_id, amount, session) // Decrement commentCount for each entry and journal
-    }
 
     // Only active follows are counted in followerCount. A pending follow just goes away.
     const follows = await Follow.find({ followerId: userId }, "journalId status", { session }).lean()
     const activeIds = follows.filter(follow => follow.status === "active").map(follow => follow.journalId)
 
     // Decrement followerCount for active follows
-    if (activeIds.length) {
-        await Journal.updateMany(
-            { _id: { $in: activeIds }, followerCount: { $gt: 0 } },
-            { $inc: { followerCount: -1 } },
-            { session, timestamps: false }
-        )
-    }
+    await decrementFollowerCount(activeIds, session)
+
     await Follow.deleteMany({ followerId: userId }, { session }) // Follows where user is follower
 
     await Like.deleteMany({ entryId: { $in: ownEntryIds } }, { session }) // Likes on User's entries

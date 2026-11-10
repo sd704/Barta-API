@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const { normalizeId } = require("../utils/objectId")
 const { VISIBILITIES, ENTRY_TYPES, CHAPTER_TITLE_MAX, ENTRY_TITLE_MAX, ENTRY_PREVIEW_MAX, ENTRY_BODY_MAX, ENTRY_MOOD_MAX,
     TAG_MAX_LENGTH, MAX_TAGS, PROGRESS_MIN, PROGRESS_MAX, DEFAULT_LIST_LIMIT } = require("../utils/constant")
 const { fail, isPlainObject, rejectExtraFields, cleanString, validateBoolean, validateNumber, validateCover, parsePagination } = require("../validation/common")
@@ -33,8 +33,9 @@ const normalizeEntryBody = (body, creating) => {
 
     // Reject if no Chapter ID
     if (body.chapterId !== undefined) {
-        if (!mongoose.Types.ObjectId.isValid(body.chapterId)) throw new Error("Invalid chapterId")
-        normalized.chapterId = body.chapterId
+        const chapterId = normalizeId(body.chapterId)
+        if (!chapterId) throw new Error("Invalid chapterId")
+        normalized.chapterId = chapterId
     }
 
     // Create new Chapter

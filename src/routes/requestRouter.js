@@ -1,6 +1,6 @@
 const { tokenAuth } = require("../middleware/tokenAuth")
 const { blockListCheck } = require("../middleware/blockListCheck")
-const { userIdValidation } = require("../middleware/userIdValidation")
+const { userIdFormat, requireUserExists } = require("../middleware/userIdValidation")
 const {
     sendConnectRequest,
     ignoreRequest,
@@ -24,27 +24,27 @@ const idSimilarityCheck = async (req, res, next) => {
 }
 
 // interested -> Send Connection request
-requestRouter.post('/api/requests/:uid/interested', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, sendConnectRequest)
+requestRouter.post('/api/requests/:uid/interested', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, sendConnectRequest)
 
 // ignored -> Ignore Profile
-requestRouter.post('/api/requests/:uid/ignored', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, ignoreRequest)
+requestRouter.post('/api/requests/:uid/ignored', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, ignoreRequest)
 
 // accepted -> Accept Connection Request
-requestRouter.patch('/api/requests/:uid/accepted', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, acceptRequest)
+requestRouter.patch('/api/requests/:uid/accepted', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, acceptRequest)
 
 // rejected -> Reject Connection Request
-requestRouter.patch('/api/requests/:uid/rejected', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, rejectRequest)
+requestRouter.patch('/api/requests/:uid/rejected', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, rejectRequest)
 
 // withdraw -> Withdraw Connection Request
-requestRouter.delete('/api/requests/:uid/withdraw', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, withdrawRequest)
+requestRouter.delete('/api/requests/:uid/withdraw', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, withdrawRequest)
 
 // remove -> Remove Connection
-requestRouter.delete('/api/requests/:uid/remove', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, removeRequest)
+requestRouter.delete('/api/requests/:uid/remove', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, removeRequest)
 
 // blocked -> Block User, Blocked users cannot see the blockers profile/posts, and cannot send requests
-requestRouter.post('/api/blocks/:uid', tokenAuth, idSimilarityCheck, userIdValidation, blockListCheck, blockRequest)
+requestRouter.post('/api/blocks/:uid', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, blockListCheck, blockRequest)
 
 // unblock -> Un-Block User
-requestRouter.delete('/api/blocks/:uid', tokenAuth, idSimilarityCheck, userIdValidation, unblockRequest)
+requestRouter.delete('/api/blocks/:uid', tokenAuth, userIdFormat, idSimilarityCheck, requireUserExists, unblockRequest)
 
-module.exports = requestRouter 
+module.exports = requestRouter

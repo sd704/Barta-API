@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const { normalizeId } = require("../utils/objectId")
 const { COVER_PATTERN, MAX_COVER_LENGTH, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } = require("../utils/constant")
 const ID_LABELS = { jid: "Journal ID", eid: "Entry ID", cid: "Chapter ID", uid: "User ID", commentId: "Comment ID" }
 
@@ -56,11 +56,15 @@ const validateCover = value => {
 
 // We can pass any no. of IDs to this function
 // To be used as a middleware, so (req, res, next)
+// A valid id is rewritten to lowercase in req.params, so everything after this sees one form of the id.
 const validateIds = (...idList) => {
     return (req, res, next) => {
         for (const id of idList) {
+            const normalized = normalizeId(req.params[id])
+
             // Reject request if any ID fails
-            if (!mongoose.Types.ObjectId.isValid(req.params[id])) return fail(res, `Invalid ${ID_LABELS[id] || id}`)
+            if (!normalized) return fail(res, `Invalid ${ID_LABELS[id] || id}`)
+            req.params[id] = normalized
         }
         next()
     }

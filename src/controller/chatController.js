@@ -5,17 +5,12 @@ const { BlockList } = require("../model/blocklist")
 const { visibleChatUser, hiddenChatUser } = require("../utils/publicProfile")
 const { CHAT_USER_FIELDS } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
-const mongoose = require("mongoose")
-
 const emptyConnection = { status: null, senderId: null, blockedByMe: false }
 
 // Get messages between 2 users. Profiles are not included. A deleted account can still have chats.
+// uid already checked and lowercased by userIdFormat.
 const getMessages = async (req, res) => {
     const targetUserId = req.params.uid
-
-    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
-        return res.status(404).json({ message: "User not found!" })
-    }
 
     const chat = await Chat.findOne({ participantsKey: participantKey(req.userObj._id, targetUserId) })
         .select("messages").lean()
@@ -110,4 +105,3 @@ const getChats = async (req, res) => {
 }
 
 module.exports = { getMessages, getChats }
-

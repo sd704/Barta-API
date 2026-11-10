@@ -10,32 +10,33 @@ const { BlockList } = require("../model/blocklist")
 const { CHAT_USER_FIELDS, MESSAGE_TEXT_MAX } = require("../utils/constant")
 const { visibleChatUser } = require("../utils/publicProfile")
 const { participantKey } = require("../utils/participantKey")
+const { normalizeId } = require("../utils/objectId")
 
 // Simple Map of online user IDs and count no. of logged in devices
 const onlineUsers = new Map() // [ {uid, count} ]
 
+// Each id in presence:subscribe costs a connection lookup and a block lookup. Longer lists are cut here.
+const PRESENCE_SUBSCRIBE_MAX = 100
+
 // Messages and typing share one rule: the other profile exists, the connection is accepted, and neither side blocked.
 // Returns the accepted connection, or null when any part fails.
+// Ids in socket payloads are normalized to lowercase by the handler, before they are used in a key or a room name.
 const findChatConnection = async (userId, targetUserId) => {
-    if (typeof targetUserId !== "string" || !mongoose.Types.ObjectId.isValid(targetUserId)) return null
+    const targetId = normalizeId(targetUserId)
+    if (!targetId) return null
 
-    const participants = participantKey(userId, targetUserId)
+    const participants = participantKey(userId, targetId)
     const [connection, isBlocked, targetExists] = await Promise.all([
         Connection.findOne({ participants, status: "accepted" }).lean(),
         BlockList.findOne({ participants }).lean(),
-        User.exists({ _id: targetUserId })
+        User.exists({ _id: targetId })
     ])
 
     return (connection && !isBlocked && targetExists) ? connection : null
 }
 
 const initializeSocket = (server) => {
-    const io = socket(server, {
-        cors: {
-            origin: "http://localhost:5173",
-            credentials: true
-        }
-    })
+    const io = socket(server, { cors: { origin: "http://localhost:5173", credentials: true } })
 
     // Socket Middleware for token auth
     io.use(async (socket, next) => {
@@ -82,37 +83,51 @@ const initializeSocket = (server) => {
             io.to(`presence:${loggedInUserId}`).emit("presence:update", { uid: loggedInUserId, status: true, lastSeen: new Date() })
         })
 
-        socket.on("presence:subscribe", async ({ userIds }) => {
+        socket.on("presence:subscribe", async (payload) => {
+            try {
+                const { userIds: requestedIds } = payload ?? {}
 
-            // We don't let blocked users know online status
-            const participantKeys = userIds.map(targetId => participantKey(loggedInUserId, targetId))
+                // A missing body, or a userIds that is not a list, is ignored. Socket.io does not catch a throw from this handler.
+                if (!Array.isArray(requestedIds)) return
 
-            const [cList, bList] = await Promise.all([
-                Connection.find({ participants: { $in: participantKeys }, status: "accepted" }).lean(),
-                BlockList.find({ participants: { $in: participantKeys } }).lean()
-            ])
+                // Ids are lowercase from here on. They name the presence rooms and key the online map, which are case sensitive.
+                // normalizeId drops a null entry and anything that is not an id. Only the first 100 are read.
+                const userIds = requestedIds.slice(0, PRESENCE_SUBSCRIBE_MAX).map(normalizeId).filter(Boolean)
+                if (!userIds.length) return
 
-            const connectedSet = new Set(cList.map(c => c.participants)) // set of participantKeys where accepted
-            const blockedSet = new Set(bList.map(block => block.participants)) // set of participantKeys where blocked
+                // We don't let blocked users know online status
+                const participantKeys = userIds.map(targetId => participantKey(loggedInUserId, targetId))
 
-            for (const [index, userId] of userIds.entries()) {
-                const key = participantKeys[index]
+                const [cList, bList] = await Promise.all([
+                    Connection.find({ participants: { $in: participantKeys }, status: "accepted" }).lean(),
+                    BlockList.find({ participants: { $in: participantKeys } }).lean()
+                ])
 
-                if (!blockedSet.has(key) && connectedSet.has(key)) {
-                    socket.join(`presence:${userId}`)
-                    const userLastSeen = await User.findById(userId).select("lastSeen").lean()
-                    const count = onlineUsers.get(userId) || 0
-                    io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0), lastSeen: userLastSeen?.lastSeen })
+                const connectedSet = new Set(cList.map(c => c.participants)) // set of participantKeys where accepted
+                const blockedSet = new Set(bList.map(block => block.participants)) // set of participantKeys where blocked
+
+                for (const [index, userId] of userIds.entries()) {
+                    const key = participantKeys[index]
+
+                    if (!blockedSet.has(key) && connectedSet.has(key)) {
+                        socket.join(`presence:${userId}`)
+                        const userLastSeen = await User.findById(userId).select("lastSeen").lean()
+                        const count = onlineUsers.get(userId) || 0
+                        io.to(`presence:${userId}`).emit("presence:initial", { uid: userId, status: (count > 0), lastSeen: userLastSeen?.lastSeen })
+                    }
                 }
+            } catch (err) {
+                console.error(err)
             }
         })
 
         socket.on("sendMessage", async (payload) => {
             try {
-                const { targetUserId, text } = payload ?? {}
+                const { targetUserId: requestedTargetId, text } = payload ?? {}
 
                 // id and text validation, before any DB lookup uses targetUserId
-                if (!mongoose.Types.ObjectId.isValid(targetUserId) || typeof text !== "string" || !text.trim()) {
+                const targetUserId = normalizeId(requestedTargetId)
+                if (!targetUserId || typeof text !== "string" || !text.trim()) {
                     return
                 }
 
@@ -125,7 +140,7 @@ const initializeSocket = (server) => {
 
                 // Check if chat exists, if not upsert
                 let chat = await Chat.findOneAndUpdate(
-                    { participantsKey: participants.join("|") },
+                    { participantsKey: participantKey(loggedInUserId, targetUserId) },
                     {
                         $push: { messages: newMessage },
                         $setOnInsert: { participants }
@@ -153,9 +168,14 @@ const initializeSocket = (server) => {
             // Only a person in the chat can mark messages, and only the other person's unread messages from the list are marked.
             // The caller always gets the update, because the read state is theirs. The other person only gets it while chatting is allowed.
             try {
-                const { stringChatId, stringMessageIds } = payload ?? {}
-                const isId = (id) => typeof id === "string" && mongoose.Types.ObjectId.isValid(id)
-                if (!isId(stringChatId) || !Array.isArray(stringMessageIds) || stringMessageIds.length === 0 || !stringMessageIds.every(isId)) return
+                const { stringChatId: requestedChatId, stringMessageIds: requestedMessageIds } = payload ?? {}
+
+                // Lowercase ids. The same strings go back to the clients in msgSeenSuccess.
+                const stringChatId = normalizeId(requestedChatId)
+                if (!stringChatId || !Array.isArray(requestedMessageIds) || requestedMessageIds.length === 0) return
+
+                const stringMessageIds = requestedMessageIds.map(normalizeId)
+                if (!stringMessageIds.every(Boolean)) return
 
                 const userId = socket.user._id
                 const chatId = new mongoose.Types.ObjectId(stringChatId)
@@ -194,13 +214,14 @@ const initializeSocket = (server) => {
         // Typing is only relayed between accepted friends who have not blocked each other. Anything else is ignored.
         socket.on("typing", async (payload) => {
             try {
-                const { targetUserId, status } = payload ?? {}
+                const { targetUserId: requestedTargetId, status } = payload ?? {}
 
                 // status validation
                 if (typeof status !== "boolean") return
 
-                // Not a friend
-                if (!await findChatConnection(loggedInUserId, targetUserId)) return
+                // Not a friend. The id is lowercase, because it names the room.
+                const targetUserId = normalizeId(requestedTargetId)
+                if (!targetUserId || !await findChatConnection(loggedInUserId, targetUserId)) return
 
                 io.to(targetUserId).emit("typing", { userId: loggedInUserId, status })
             } catch (err) {

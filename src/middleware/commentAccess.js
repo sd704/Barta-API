@@ -2,17 +2,9 @@ const { Comment } = require("../model/comment")
 const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { BlockList } = require("../model/blocklist")
-const { requireEntriesAccess, requireEntryReadAccess } = require("./journalAccess")
 const { commentsClosedMessage } = require("../policy/journalRules")
+const { commentScopeError } = require("../policy/journalAccessPolicy")
 const { participantKey } = require("../utils/participantKey")
-
-// Comment access check -> Used after resolveJournalAccess/requireEntriesAccess
-const requireCommentAccess = (req, res, next) => {
-    if (req.journalAccess.mode === "full") {
-        return next()
-    }
-    return res.status(403).json({ message: "Comments are available after you receive access to this journal" })
-}
 
 // Check is comment allowed on Journal/Entry
 const requireCommentsOpen = (req, res, next) => {
@@ -71,11 +63,9 @@ const loadCommentParent = async (req, res, next) => {
 // Journal comments need full journal access. Entry comments also need that entry to be readable.
 // Must run after resolveJournalAccess, and after req.entry has been set for an entry comment.
 const requireScopedCommentAccess = (req, res, next) => {
-    if (!req.entry) return requireCommentAccess(req, res, next) // Journal comment. Full journal access is enough.
-
-    // Entry comment. A preview or teaser reader is turned away before the entry itself is checked.
-    if (req.journalAccess.mode !== "full") return requireEntriesAccess(req, res, next)
-    requireEntryReadAccess(req, res, next)
+    const failure = commentScopeError(req.journalAccess, req.entry)
+    if (failure) return res.status(failure.statusCode).json({ message: failure.message })
+    next()
 }
 
 // Check comment visibility
@@ -101,11 +91,9 @@ const requireVisibleComment = async (req, res, next) => {
 }
 
 module.exports = {
-    requireCommentAccess,
     requireCommentsOpen,
     loadCommentById,
     loadCommentParent,
     requireScopedCommentAccess,
     requireVisibleComment
 }
-

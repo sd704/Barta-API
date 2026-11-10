@@ -6,7 +6,7 @@ const blockListCheck = async (req, res, next) => {
         const userId = req.userObj._id
         const { uid } = req.params
 
-        // Validate Receiver ID already done by middleware -> userIdValidation
+        // Receiver ID already checked on the route by userIdFormat and requireUserExists
 
         // Check if User is Blocked or User blocked Receiver
         const searchResult = await BlockList.findOne({ participants: participantKey(userId, uid) })

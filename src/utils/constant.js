@@ -1,3 +1,8 @@
+const USER_ABOUT_MAX = 60
+const USER_DESCRIPTION_MAX = 200
+const AGE_MIN = 18
+const GENDERS = ["male", "female", "other"]
+
 const SAFE_DATA = ["_id", "firstName", "lastName", "fullName", "email", "about", "description", "age", "gender", "pfp"]
 const ALLOWED_UPDATES = ["firstName", "lastName", "about", "description", "age", "gender", "pfp"]
 const CONNECTION_SAFE_DATA = ["senderId", "receiverId", "status", "createdAt"]
@@ -58,10 +63,13 @@ const SUMMARY_TEXT_MAX = 20000
 const SUMMARY_QUERY = `The following JSON data is from a Journal, which has Chapters, and Chapters has Entries. 
 Summarize this data into a paragraph or two, which is easy to read, should be less than 1000 characters. 
 You don't have to mention chapter/entry title or numbers (optional), we just need the jist of what this whole journal/journey is about.
-If the entry type is "private", ignore it, don't mention them in summary.
 The output should be strictly a string, without quotes.`
 
 module.exports = {
+    USER_ABOUT_MAX,
+    USER_DESCRIPTION_MAX,
+    AGE_MIN,
+    GENDERS,
     SAFE_DATA,
     ALLOWED_UPDATES,
     CONNECTION_SAFE_DATA,

@@ -1,5 +1,8 @@
 const { Subscription } = require("../model/subscription")
+const { BlockList } = require("../model/blocklist")
 const { SUBSCRIPTION_PRICE } = require("../utils/constant")
+const { participantKey } = require("../utils/participantKey")
+
 
 // For GET "/api/authors/:uid/subscription"
 const getSubscriptionStatus = async (req, res) => {
@@ -7,6 +10,12 @@ const getSubscriptionStatus = async (req, res) => {
 
     if (req.userObj._id.equals(authorId)) {
         return res.status(400).json({ message: "You cannot subscribe to yourself" })
+    }
+
+    // A block from them hides the author, the same as a missing account. A block from me does not.
+    const block = await BlockList.findOne({ participants: participantKey(req.userObj._id, authorId) }).select("senderId").lean()
+    if (block && !block.senderId.equals(req.userObj._id)) {
+        return res.status(404).json({ message: "User not found!" })
     }
 
     const subscription = await Subscription.findOne({ subscriberId: req.userObj._id, authorId }).select("amount currency paidAt").lean()

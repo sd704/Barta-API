@@ -35,6 +35,7 @@ const entrySchema = new mongoose.Schema({
     },
     commentsAllowed: { type: Boolean, default: true },
     likeCount: { type: Number, default: 0, min: 0 },
+    bookmarkCount: { type: Number, default: 0, min: 0 },
     commentCount: { type: Number, default: 0, min: 0 }
 }, { timestamps: true })
 

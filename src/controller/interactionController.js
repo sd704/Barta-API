@@ -6,6 +6,8 @@ const { Bookmark } = require("../model/bookmark")
 const { httpError } = require("../utils/httpError")
 const { loadReaderContextForJournal } = require("../services/journalReaderContext")
 const { entryInteractionError } = require("../policy/journalAccessPolicy")
+const { incrementLikeCount, decrementLikeCount } = require("../services/likeCounter")
+const { incrementBookmarkCount, decrementBookmarkCount } = require("../services/bookmarkCounter")
 
 // Shared authorization for like and save, both adding and removing.
 const assertEntryInteraction = async (userId, journalId, entryId, session) => {
@@ -44,10 +46,7 @@ const addReaction = async (req, res, options) => {
         await session.withTransaction(async () => {
             await assertEntryInteraction(userId, req.journal._id, entryId, session)
             await options.Model.create([{ userId, entryId }], { session }) // Model: Like/Bookmark passed as parameter
-
-            if (options.counterField) {
-                await Entry.updateOne({ _id: entryId }, { $inc: { [options.counterField]: 1 } }, { session })
-            }
+            await options.increment(entryId, session)
         })
     } catch (error) {
         if (error.code === 11000) return res.status(409).json({ message: options.duplicateMessage(req.entry.title) })
@@ -56,13 +55,13 @@ const addReaction = async (req, res, options) => {
         await session.endSession()
     }
 
-    const updated = await Entry.findById(entryId).select("likeCount").lean() // null if the entry was deleted right after the commit.
+    const updated = await Entry.findById(entryId).select(options.countField).lean() // null if the entry was deleted right after the commit.
 
     res.status(201).json({
         message: options.createdMessage(req.entry.title),
         data: {
             entryId,
-            ...(options.counterField ? { likeCount: updated?.likeCount ?? 0 } : {})
+            [options.countField]: updated?.[options.countField] ?? 0
         }
     })
 }
@@ -84,25 +83,19 @@ const removeReaction = async (req, res, options) => {
 
             if (!deleted) throw httpError(404, options.missingMessage(title))
 
-            if (options.counterField) {
-                await Entry.updateOne(
-                    { _id: entryId, [options.counterField]: { $gt: 0 } },
-                    { $inc: { [options.counterField]: -1 } },
-                    { session }
-                )
-            }
+            await options.decrement(entryId, session)
         })
     } finally {
         await session.endSession()
     }
 
-    const updated = await Entry.findById(entryId).select("likeCount").lean() // null if the entry was deleted right after the commit.
+    const updated = await Entry.findById(entryId).select(options.countField).lean() // null if the entry was deleted right after the commit.
 
     res.status(200).json({
         message: options.removedMessage(title),
         data: {
             entryId,
-            ...(options.counterField ? { likeCount: updated?.likeCount ?? 0 } : {})
+            [options.countField]: updated?.[options.countField] ?? 0
         }
     })
 }
@@ -110,7 +103,8 @@ const removeReaction = async (req, res, options) => {
 // For POST '/like'
 const likeEntry = (req, res) => addReaction(req, res, {
     Model: Like,
-    counterField: "likeCount",
+    increment: incrementLikeCount,
+    countField: "likeCount",
     createdMessage: title => `You liked '${title}'`,
     duplicateMessage: title => `You have already liked '${title}'`
 })
@@ -118,7 +112,8 @@ const likeEntry = (req, res) => addReaction(req, res, {
 // For DELETE '/like'
 const unlikeEntry = (req, res) => removeReaction(req, res, {
     Model: Like,
-    counterField: "likeCount",
+    decrement: decrementLikeCount,
+    countField: "likeCount",
     removedMessage: title => `You removed your like from '${title}'`,
     missingMessage: title => `You have not liked '${title}'`
 })
@@ -126,13 +121,17 @@ const unlikeEntry = (req, res) => removeReaction(req, res, {
 // For POST '/save'
 const saveEntry = (req, res) => addReaction(req, res, {
     Model: Bookmark,
+    increment: incrementBookmarkCount,
+    countField: "bookmarkCount",
     createdMessage: title => `You saved '${title}'`,
     duplicateMessage: title => `You have already saved '${title}'`
 })
 
-// For DELETE '/like'
+// For DELETE '/save'
 const unsaveEntry = (req, res) => removeReaction(req, res, {
     Model: Bookmark,
+    decrement: decrementBookmarkCount,
+    countField: "bookmarkCount",
     removedMessage: title => `You removed '${title}' from your saved entries`,
     missingMessage: title => `You have not saved '${title}'`
 })

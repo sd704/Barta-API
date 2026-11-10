@@ -10,9 +10,10 @@ const { Bookmark } = require("../model/bookmark")
 const { Subscription } = require("../model/subscription")
 const { ENTRY_VISIBILITY_BY_JOURNAL } = require("../utils/constant")
 const { commentsAllowedForVisibility } = require("../policy/journalRules")
-const { canReadEntryWithAccess } = require("../policy/journalAccessPolicy")
+const { canReadEntryWithAccess, resolveAccessMode } = require("../policy/journalAccessPolicy")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { refreshJournalSummary } = require("../services/journalSummaryService")
+const { incrementFollowerCount } = require("../services/followCounter")
 const { httpError } = require("../utils/httpError")
 const { participantKey } = require("../utils/participantKey")
 
@@ -41,7 +42,26 @@ const getOwnJournals = async (req, res) => {
     res.status(200).json(paginatedResponse("Your journals", journals, total, page, limit))
 }
 
-// For GET "/api/users/:uid/journals",
+// Fields a reader without full access does not get. Preview (selected journal) and teaser (subscribed journal) leave them out.
+// Used by the single journal and by the user's journal list, so both show the same thing for the same reader.
+const LIMITED_VIEW_FIELDS = ["progress", "endedAt", "lastEntryAt", "aiSummary"]
+
+// Sets journal.view to the reader's access mode and, when that is not "full", removes LIMITED_VIEW_FIELDS.
+const applyAccessView = (journal, mode) => {
+    journal.view = mode // Full, Preview or Teaser
+
+    if (mode !== "full") {
+        for (const field of LIMITED_VIEW_FIELDS) {
+            delete journal[field]
+        }
+    }
+    return journal
+}
+
+// For GET "/api/users/:uid/journals"
+// Lists every journal of that user except private ones, so a selected or subscribed journal can be found and requested.
+// Each item is as much as the reader may open: "full", "preview" (selected, not approved) or "teaser" (subscribed, not paid).
+// A friends-only journal is only in the list for a friend. It is left out of the query, so a non-friend cannot see it in the list or in the total.
 const getUserJournals = async (req, res) => {
     const authorId = req.params.uid
     const userId = req.userObj._id
@@ -52,41 +72,51 @@ const getUserJournals = async (req, res) => {
     const participants = participantKey(userId, authorId)
 
     // Check Connection with user
-    const [blocked, connection, follows] = await Promise.all([
+    const [blocked, connection, subscribed] = await Promise.all([
         BlockList.exists({ participants }),
         Connection.exists({ participants, status: "accepted" }),
-        Follow.find({ followerId: userId, status: "active" }).select("journalId").lean()
+        Subscription.exists({ subscriberId: userId, authorId })
     ])
 
-    if (blocked) return res.status(404).json({ message: "User does not exist" })
+    if (blocked) return res.status(404).json({ message: "User not found!" })
 
-    const followedIds = follows.map(item => item.journalId)
-    const visibilityConditions = [{ visibility: "public" }]
-
+    const visibilities = ["public", "selected", "subscribed"]
     if (connection) {
-        visibilityConditions.push({ visibility: "friends" })
+        visibilities.push("friends")
     }
 
-    const subscribed = await Subscription.exists({ subscriberId: userId, authorId })
-
-    visibilityConditions.push({ visibility: "selected", _id: { $in: followedIds } })
-
-    if (subscribed) {
-        visibilityConditions.push({ visibility: "subscribed" })
-    }
-
-    const query = { authorId, $or: visibilityConditions }
+    const query = { authorId, visibility: { $in: visibilities } }
 
     if (req.query.status) {
         query.status = req.query.status
     }
 
+    // pinned is the author's own ordering. Readers neither see it nor get journals sorted by it.
+    const sort = { ...SORTS[req.journalSort] }
+    delete sort.pinned
+
     const [journals, total] = await Promise.all([
-        Journal.find(query).select("-chapters").sort(SORTS[req.journalSort]).skip(skip).limit(limit).lean(), // Exclude Chapters
+        Journal.find(query).select("-chapters -pinned").sort(sort).skip(skip).limit(limit).lean(), // Exclude Chapters
         Journal.countDocuments(query)
     ])
 
-    res.status(200).json(paginatedResponse("User journals", journals, total, page, limit))
+    // Only the selected journals on this page need the follow check. An active follow is an approved one.
+    const selectedIds = journals.filter(journal => journal.visibility === "selected").map(journal => journal._id)
+    const follows = selectedIds.length
+        ? await Follow.find({ followerId: userId, status: "active", journalId: { $in: selectedIds } }).select("journalId").lean()
+        : []
+    const followedIds = new Set(follows.map(follow => follow.journalId.toString()))
+
+    const data = journals.map(journal => {
+        const mode = resolveAccessMode(journal, {
+            isFriend: Boolean(connection),
+            isFollower: followedIds.has(journal._id.toString()),
+            isSubscriber: Boolean(subscribed)
+        })
+        return applyAccessView(journal, mode)
+    })
+
+    res.status(200).json(paginatedResponse("User journals", data, total, page, limit))
 }
 
 // For GET "/api/journals/:jid"
@@ -106,13 +136,10 @@ const getJournal = async (req, res) => {
         entriesByChapter.get(key).push(entry)
     }
 
-    journal.view = access.mode // Full, Preview or Teaser
+    applyAccessView(journal, access.mode) // Sets view, and drops the fields a preview or teaser does not get
 
-    if (access.mode !== "full") {
-        delete journal.progress
-        delete journal.endedAt
-        delete journal.lastEntryAt
-        delete journal.aiSummary
+    if (!access.isAuthor) {
+        delete journal.pinned // Only the author's own journal routes include pinned.
     }
 
     journal.chapters = journal.chapters

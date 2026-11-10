@@ -6,11 +6,12 @@ const { USER_NAME_FIELDS, ENTRY_FIELDS } = require("../utils/constant")
 // POST body for the summary model. 
 // Chapters follow chapter.order. Entries inside a chapter follow createdAt, oldest first.
 const buildSummaryPayload = async journalId => {
-    const [journal, entries] = await Promise.all([
-        Journal.findById(journalId).populate({ path: "author", select: USER_NAME_FIELDS }).lean(),
-        Entry.find({ journalId }).sort({ createdAt: 1 }).select(ENTRY_FIELDS).lean()
-    ])
+    const journal = await Journal.findById(journalId).populate({ path: "author", select: USER_NAME_FIELDS }).lean()
     if (!journal) return null
+
+    // visibility matches the journal, so a private entry on a public journal is not sent to the model.
+    // A private journal still includes its entries, because that visibility is the journal's own.
+    const entries = await Entry.find({ journalId, visibility: journal.visibility }).sort({ createdAt: 1 }).select(ENTRY_FIELDS).lean()
 
     const entriesByChapter = new Map()
     for (const entry of entries) {

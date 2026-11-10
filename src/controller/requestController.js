@@ -1,11 +1,12 @@
 const mongoose = require("mongoose")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
+const { User } = require("../model/user")
 const { Journal } = require("../model/journal")
 const { Follow } = require("../model/follow")
 const { SAFE_DATA } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
-const { decrementFollowerCount } = require("../services/followerCount")
+const { decrementFollowerCount } = require("../services/followCounter")
 
 // Helper Functions
 const getUserAndTarget = (req) => ({ userId: req.userObj._id, targetUserId: req.params.uid })
@@ -147,31 +148,38 @@ const removeRequest = async (req, res, next) => {
         return res.status(200).json({ message: `Connection removed successfully!`, data: formatResponse2(removed, "remove") })
     }
 
-    return res.status(404).json({ message: `Connection does not exists!` })
+    return res.status(404).json({ message: `Connection does not exist!` })
 }
 
 const blockRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
 
     // Check if connection request exists -> Done by blockListCheck middleware
+    const targetUser = await User.findById(targetUserId).select("fullName email")
+    if (!targetUser) return res.status(404).json({ message: `User not found!` })
 
     const connectionObj = { senderId: userId, receiverId: targetUserId }
     const blockRequest = new BlockList(connectionObj)
     await blockRequest.save()
-    return res.status(200).json({ message: `User blocked successfully!` })
+    return res.status(200).json({
+        message: `User blocked successfully!`,
+        data: { _id: targetUser._id, fullName: targetUser.fullName, email: targetUser.email }
+    })
 }
 
 const unblockRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
 
-    // Check if connection request exists and delete
-    const searchResult = await BlockList.findOneAndDelete({ senderId: userId, receiverId: targetUserId })
+    // One block row per pair. senderId says who blocked whom.
+    const block = await BlockList.findOne({ participants: participantKey(userId, targetUserId) })
 
-    if (searchResult) {
-        return res.status(200).json({ message: `User un-blocked successfully!` })
-    }
+    if (!block) return res.status(404).json({ message: `User not in blocklist!` })
 
-    return res.status(404).json({ message: `User not in blocklist!` })
+    // If Logged in user is blocked.
+    if (!block.senderId.equals(userId)) return res.status(404).json({ message: `User not found!` })
+
+    await block.deleteOne()
+    return res.status(200).json({ message: `User un-blocked successfully!` })
 }
 
 module.exports = { sendConnectRequest, ignoreRequest, acceptRequest, rejectRequest, withdrawRequest, removeRequest, blockRequest, unblockRequest }

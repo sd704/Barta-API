@@ -27,8 +27,8 @@ const userSchema = new mongoose.Schema({
             }
         }
     },
-    about: { type: String, max: 60, trim: true },
-    description: { type: String, max: 200, trim: true },
+    about: { type: String, maxlength: 60, trim: true },
+    description: { type: String, maxlength: 200, trim: true },
     age: { type: Number, min: 18 },
     gender: {
         type: String, lowercase: true, enum: {
@@ -61,26 +61,15 @@ userSchema.methods.filterSafeData = function () {
     return Object.fromEntries(Object.entries(userObj.toJSON()).filter(([key]) => SAFE_DATA.includes(key)))
 }
 
-// Changed fields only, using the stored values. A first or last name change also includes fullName.
-userSchema.methods.filterUpdates = function (updates) {
-    const saved = this.filterSafeData()
-    const updatedFields = Object.fromEntries(Object.keys(updates).map(field => [field, saved[field] ?? null]))
-    if (updates.firstName !== undefined || updates.lastName !== undefined) {
-        updatedFields.fullName = saved.fullName
-    }
-    return updatedFields
-}
-
-// One safe profile, plus the changed fields taken from it. 
+// One safe profile, plus the changed fields taken from it.
 userSchema.methods.filterUpdates = function (updates) {
     const data = this.filterSafeData()
     const updatedFields = Object.fromEntries(Object.keys(updates).map(field => [field, data[field] ?? null]))
     if (updates.firstName !== undefined || updates.lastName !== undefined) {
-        updatedFields.fullName = saved.fullName // A first or last name change also includes fullName.
+        updatedFields.fullName = data.fullName // A first or last name change also includes fullName.
     }
     return { data, updatedFields }
 }
-
 
 const User = mongoose.model('User', userSchema)
 module.exports = { User }

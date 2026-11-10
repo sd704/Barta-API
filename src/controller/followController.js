@@ -3,12 +3,13 @@ const { Journal } = require("../model/journal")
 const { Follow } = require("../model/follow")
 const { User } = require("../model/user")
 const { Subscription } = require("../model/subscription")
+const { BlockList } = require("../model/blocklist")
 const { httpError } = require("../utils/httpError")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { PUBLIC_PROFILE_FIELDS } = require("../utils/constant")
 const { displayName } = require("../utils/publicProfile")
 const { loadRelationships, blockedUserIds } = require("../services/journalReaderContext")
-const { decrementFollowerCount } = require("../services/followerCount")
+const { incrementFollowerCount, decrementFollowerCount } = require("../services/followCounter")
 const { journalDiscoveryError } = require("../policy/journalAccessPolicy")
 
 // For POST "/api/journals/:jid/follow"
@@ -39,7 +40,7 @@ const followJournal = async (req, res) => {
             await Follow.create([{ followerId, journalId, status }], { session })
 
             if (status === "active") {
-                await Journal.updateOne({ _id: journalId }, { $inc: { followerCount: 1 } }, { session })
+                await incrementFollowerCount(journalId, session)
             }
 
             result = { status, title: journal.title }
@@ -136,19 +137,23 @@ const getFollowers = async (req, res) => {
     }
 
     const { page, limit, skip } = req.pagination
+
+    // Follows are kept when a block is created, so the list hides anyone blocked with the viewer, in either direction.
+    // followerCount is the stored number of active follows and still includes them.
+    const hiddenIds = await blockedUserIds(req.userObj._id)
+
     const query = {
         journalId: journal._id,
-        status: req.journalAccess.isAuthor ? (req.query.status || { $in: ["pending", "active"] }) : "active"
-    }
-
-    if (!req.journalAccess.isAuthor) {
-        query.followerId = { $nin: await blockedUserIds(req.userObj._id) }
+        status: req.journalAccess.isAuthor ? (req.query.status || { $in: ["pending", "active"] }) : "active",
+        followerId: { $nin: hiddenIds }
     }
 
     const [follows, total, pendingCount] = await Promise.all([
         Follow.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).populate("followerId", PUBLIC_PROFILE_FIELDS).lean(),
         Follow.countDocuments(query),
-        req.journalAccess.isAuthor ? Follow.countDocuments({ journalId: journal._id, status: "pending" }) : Promise.resolve(undefined)
+        req.journalAccess.isAuthor
+            ? Follow.countDocuments({ journalId: journal._id, status: "pending", followerId: { $nin: hiddenIds } })
+            : Promise.resolve(undefined)
     ])
 
     const data = follows
@@ -177,6 +182,13 @@ const reviewFollower = async (req, res) => {
 
     if (req.userObj._id.equals(followerId)) {
         return res.status(400).json({ message: "You cannot review your own follow request" })
+    }
+
+    // A follower who blocked the author is hidden from the follower list, so their request looks missing here too.
+    // A follower the author blocked can still be reviewed.
+    const blockedByFollower = await BlockList.exists({ senderId: followerId, receiverId: req.userObj._id })
+    if (blockedByFollower) {
+        return res.status(404).json({ message: "No follow request exists for this user" })
     }
 
     const session = await mongoose.startSession()
@@ -221,7 +233,7 @@ const reviewFollower = async (req, res) => {
                     throw httpError(404, "No follow request exists for this user")
                 }
 
-                await Journal.updateOne({ _id: journalId }, { $inc: { followerCount: 1 } }, { session }) // Count the newly approved follower +1
+                await incrementFollowerCount(journalId, session) // Count the newly approved follower +1
                 result = { action: "approved", name: displayName(follower), title: journal.title }
                 return
             }

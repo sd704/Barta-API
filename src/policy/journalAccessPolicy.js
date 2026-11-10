@@ -121,6 +121,17 @@ const fullJournalAccessError = (journal, userId, relationships, followedIds, sub
     return null // Access allowed
 }
 
+// Comment routes, after access was resolved. A journal comment needs full journal access.
+// An entry comment needs full access and that entry to be readable. Null means allowed.
+const commentScopeError = (access, entry) => {
+    if (!entry) {
+        return access.mode === "full" ? null : { statusCode: 403, message: "Comments are available after you receive access to this journal" }
+    }
+    if (access.mode !== "full") return { statusCode: 403, message: "Entries are hidden for this journal" }
+    if (!canReadEntryWithAccess(entry, access)) return { statusCode: 404, message: "Entry does not exist" }
+    return null
+}
+
 module.exports = {
     isJournalHiddenFromViewer,
     resolveAccessMode,
@@ -130,6 +141,6 @@ module.exports = {
     canReadEntry,
     journalDiscoveryError,
     entryInteractionError,
-    fullJournalAccessError
+    fullJournalAccessError,
+    commentScopeError
 }
-

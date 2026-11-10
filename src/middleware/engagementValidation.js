@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const { normalizeId } = require("../utils/objectId")
 const { FOLLOW_STATUSES, FOLLOW_DECISIONS, JOURNAL_STATUSES, ENTRY_TYPES, DEFAULT_LIST_LIMIT, COMMENT_TEXT_MAX } = require("../utils/constant")
 const { fail, isPlainObject, rejectExtraFields, cleanString, parsePagination } = require("../validation/common")
 
@@ -92,12 +92,14 @@ const commentTarget = (source) => {
     if (journalId === undefined && entryId === undefined) throw new Error("journalId or entryId is required")
 
     if (journalId !== undefined) {
-        if (typeof journalId !== "string" || !mongoose.Types.ObjectId.isValid(journalId)) throw new Error("Invalid journalId")
-        return { journalId }
+        const normalizedJournalId = normalizeId(journalId)
+        if (!normalizedJournalId) throw new Error("Invalid journalId")
+        return { journalId: normalizedJournalId }
     }
 
-    if (typeof entryId !== "string" || !mongoose.Types.ObjectId.isValid(entryId)) throw new Error("Invalid entryId")
-    return { entryId }
+    const normalizedEntryId = normalizeId(entryId)
+    if (!normalizedEntryId) throw new Error("Invalid entryId")
+    return { entryId: normalizedEntryId }
 }
 
 // GET /api/comments. The target id is checked before the journal lookup.

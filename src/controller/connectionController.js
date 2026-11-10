@@ -80,15 +80,20 @@ const getConnectionStatus = async (req, res, next) => {
     const participants = participantKey(userId, targetUserId)
 
     // Run Parallel
-    const [existing, blocked] = await Promise.all([
+    const [existing, block] = await Promise.all([
         Connection.findOne({ participants }).lean(),
-        BlockList.findOne({ senderId: userId, receiverId: targetUserId }).lean()
+        BlockList.findOne({ participants }).lean()
     ])
 
+    // A block from them hides the user, the same as a missing account. A block from me stays visible as isBlocked.
+    if (block && !block.senderId.equals(userId)) {
+        return res.status(404).json({ message: `User not found!` })
+    }
+
     const data = existing ? {
-        senderId: existing.senderId, receiverId: existing.receiverId, status: existing.status, isBlocked: !!blocked
+        senderId: existing.senderId, receiverId: existing.receiverId, status: existing.status, isBlocked: Boolean(block)
     } : {
-        status: "", isBlocked: !!blocked
+        status: "", isBlocked: Boolean(block)
     }
 
     res.status(200).json({ message: `Connection Details`, data })

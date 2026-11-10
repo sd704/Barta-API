@@ -1,6 +1,6 @@
 const express = require("express")
 const { tokenAuth } = require("../middleware/tokenAuth")
-const { userIdValidation } = require("../middleware/userIdValidation")
+const { requireUserExists } = require("../middleware/userIdValidation")
 const { validateIds, validateJournalQuery, validateCreateJournal, validateUpdateJournal } = require("../middleware/journalValidation")
 const { loadJournal, requireJournalAuthor, resolveJournalAccess } = require("../middleware/journalAccess")
 const { getOwnJournals, getUserJournals, getJournal, createJournal, updateJournal, deleteJournal } = require("../controller/journalController")
@@ -11,7 +11,7 @@ journalRouter.get("/api/journals",
     tokenAuth, validateJournalQuery, getOwnJournals)
 
 journalRouter.get("/api/users/:uid/journals",
-    tokenAuth, validateIds("uid"), validateJournalQuery, userIdValidation, getUserJournals)
+    tokenAuth, validateIds("uid"), validateJournalQuery, requireUserExists, getUserJournals)
 
 journalRouter.post("/api/journals",
     tokenAuth, validateCreateJournal, createJournal)
@@ -26,7 +26,7 @@ journalRouter.delete("/api/journals/:jid",
     tokenAuth, validateIds("jid"), loadJournal, requireJournalAuthor, deleteJournal)
 
 journalRouter.get("/api/journals/:jid/chapters",
-    tokenAuth, validateIds("jid"), loadJournal, requireJournalAuthor, getChapters)
+    tokenAuth, validateIds("jid"), loadJournal, resolveJournalAccess, getChapters)
 
 journalRouter.delete("/api/journals/:jid/chapters/:cid",
     tokenAuth, validateIds("jid", "cid"), loadJournal, requireJournalAuthor, deleteChapter)

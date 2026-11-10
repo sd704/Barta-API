@@ -1,4 +1,4 @@
-const mongoose = require("mongoose")
+const { normalizeId } = require("../utils/objectId")
 const { VISIBILITIES, JOURNAL_STATUSES, JOURNAL_SORTS, JOURNAL_TITLE_MAX, JOURNAL_ABOUT_MAX, JOURNAL_CATEGORY_MAX, CHAPTER_TITLE_MAX, MAX_CHAPTERS, PROGRESS_MIN, PROGRESS_MAX } = require("../utils/constant")
 const { fail, isPlainObject, rejectExtraFields, cleanString, validateBoolean, validateNumber, validateCover, validateIds, parsePagination } = require("../validation/common")
 
@@ -23,9 +23,9 @@ const normalizeChapterList = (chapters) => {
         const title = cleanString(chapter.title, `chapters[${index}].title`, { required: true, max: CHAPTER_TITLE_MAX })
         if (chapter.cid === undefined) return { title } // New chapter
 
-        if (!mongoose.Types.ObjectId.isValid(chapter.cid)) throw new Error(`Invalid chapter ID at chapters[${index}]`)
+        const cid = normalizeId(chapter.cid) // Lowercase, the same form as _id.toString()
+        if (!cid) throw new Error(`Invalid chapter ID at chapters[${index}]`)
 
-        const cid = new mongoose.Types.ObjectId(chapter.cid).toString() // Same form as _id.toString()
         if (ids.has(cid)) throw new Error("Duplicate chapter ID")
         ids.add(cid)
         return { cid, title }
