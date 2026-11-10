@@ -48,7 +48,7 @@ const findUserByEmail = async (req, res, next) => {
     const userId = req.userObj._id
     const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId }).lean()
     if (searchResult) {
-        return res.status(403).json({ message: `User with email ${email} not found!` })
+        return res.status(404).json({ message: `User with email ${email} not found!` })
     }
 
     res.status(200).json({ message: `User found successfully`, data: result.filterSafeData() })
@@ -59,7 +59,7 @@ const findUserById = async (req, res, next) => {
     const { id } = req.query
 
     if (!id) { return res.status(400).json({ message: `Search query 'id' required!` }) }
-    if (userId.toString() === id) { return res.status(400).json({ message: "Invalid request" }) }
+    if (userId.equals(id)) { return res.status(400).json({ message: "Invalid request" }) }
 
     // Validate ObjectId format first
     if (!mongoose.Types.ObjectId.isValid(id)) { return res.status(404).json({ message: `User not found!` }) }
@@ -67,7 +67,7 @@ const findUserById = async (req, res, next) => {
     const result = await User.findById(id)
     if (!result) { return res.status(404).json({ message: `User not found!` }) }
 
-    const participants = participantKey(userId, id)
+    const participants = participantKey(userId, result._id)
 
     // Run Parallel
     const [existing, blocked] = await Promise.all([

@@ -81,8 +81,12 @@ const getUserJournals = async (req, res) => {
         query.status = req.query.status
     }
 
+    // pinned is the author's own ordering. Readers neither see it nor get journals sorted by it.
+    const sort = { ...SORTS[req.journalSort] }
+    delete sort.pinned
+
     const [journals, total] = await Promise.all([
-        Journal.find(query).select("-chapters").sort(SORTS[req.journalSort]).skip(skip).limit(limit).lean(), // Exclude Chapters
+        Journal.find(query).select("-chapters -pinned").sort(sort).skip(skip).limit(limit).lean(), // Exclude Chapters
         Journal.countDocuments(query)
     ])
 
@@ -113,6 +117,10 @@ const getJournal = async (req, res) => {
         delete journal.endedAt
         delete journal.lastEntryAt
         delete journal.aiSummary
+    }
+
+    if (!access.isAuthor) {
+        delete journal.pinned // Only the author's own journal routes include pinned.
     }
 
     journal.chapters = journal.chapters

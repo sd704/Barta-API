@@ -73,7 +73,7 @@ const updateUser = async (req, res, next) => {
     res.status(200).json({ message: `User data updated successfully`, data, updatedFields })
 }
 
-// Deletes the account and everything tied to it in one transaction. Chats stay, they show as Unknown User.
+// Deletes the account and everything tied to it in one transaction. Comments and Chats stay.
 const deleteUser = async (req, res, next) => {
     const deletedUser = req.userObj.filterSafeData()
     const session = await mongoose.startSession()

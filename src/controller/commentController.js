@@ -10,7 +10,7 @@ const { entryInteractionError, fullJournalAccessError } = require("../policy/jou
 const { commentsClosedMessage } = require("../policy/journalRules")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { PUBLIC_PROFILE_FIELDS } = require("../utils/constant")
-const { publicProfile } = require("../utils/publicProfile")
+const { publicProfile, commentAuthor } = require("../utils/publicProfile")
 const { participantKey } = require("../utils/participantKey")
 
 // Comment shape for list, get, create, reply, and update
@@ -20,7 +20,7 @@ const formatComment = (comment, author, options = {}) => ({
     entryId: comment.entryId, // null on journal level comment
     parentId: comment.parentId, // null on top level comment. Replies point to top level comment
     text: comment.text,
-    author, // publicProfile or null if user deleted
+    author, // publicProfile or "Deleted User" if user deleted
     createdAt: comment.createdAt,
     updatedAt: comment.updatedAt,
     ...(options.includeModeration ? { isHidden: comment.isHidden } : {}), // for hidden comment, only visible to Journal Author
@@ -122,7 +122,7 @@ const listComments = async (req, res) => {
         message,
         comments.map(comment => formatComment(
             comment,
-            publicProfile(comment.author),
+            commentAuthor(comment.author),
             { includeModeration: isAuthor, replyCount: countByParent.get(comment._id.toString()) || 0 }
         )),
         total,
@@ -161,7 +161,7 @@ const getComment = async (req, res) => {
 
     res.status(200).json({
         message: "Comment retrieved successfully",
-        data: formatComment(comment, publicProfile(comment.author), {
+        data: formatComment(comment, commentAuthor(comment.author), {
             includeModeration: isAuthor,
             hiddenByParent: isAuthor ? hiddenByParent : undefined,
             replyCount
@@ -262,10 +262,9 @@ const hideMessage = ({ nextHidden, parentHidden }) => {
 }
 
 // Reloads the comment inside the transaction and, for a reply.
-// requireOpen — text edit. Comments that are turned off reject the edit for the commenter and the journal author.
-const loadCommentForChange = async (req, session, { requireOpen = false } = {}) => {
-    if (requireOpen) await assertWritableContext(req, session)
-    else await assertReadableContext(req, session) // Hide still works after comments are turned off.
+// Hide works even after comments are turned off. The text edit checks closedMessage, if the comment is not hidden.
+const loadCommentForChange = async (req, session) => {
+    const context = await assertReadableContext(req, session)
 
     const comment = await Comment.findById(req.comment._id).session(session)
     if (!comment) throw httpError(404, "Comment does not exist")
@@ -277,6 +276,7 @@ const loadCommentForChange = async (req, session, { requireOpen = false } = {}) 
 
     return {
         comment,
+        closedMessage: commentsClosedMessage(context.journal, context.entry),
         parentHidden: Boolean(parent?.isHidden),
         isAuthor: req.journal.authorId.equals(req.userObj._id),
         isCommenter: comment.userId.equals(req.userObj._id),
@@ -291,15 +291,12 @@ const updateComment = async (req, res) => {
 
     try {
         await session.withTransaction(async () => {
-            const { comment, isAuthor, isCommenter, concealed } = await loadCommentForChange(req, session, { requireOpen: true })
+            const { comment, isAuthor, isCommenter, concealed, closedMessage } = await loadCommentForChange(req, session)
 
-            // A stranger who cannot see the comment is not told that it exists.
-            if (!isCommenter) {
-                throw httpError(
-                    !isAuthor && concealed ? 404 : 403,
-                    !isAuthor && concealed ? "Comment does not exist" : "You can only edit your own comment"
-                )
-            }
+            // A hidden comment does not exist for anyone except the journal author, including the person who wrote it.
+            if (concealed && !isAuthor) throw httpError(404, "Comment does not exist")
+            if (closedMessage) throw httpError(403, closedMessage) // Comments turned off reject the edit for the commenter and the journal author.
+            if (!isCommenter) throw httpError(403, "You can only edit your own comment")
 
             if (req.validatedBody.text === comment.text) throw httpError(400, "No changes were made to this comment")
 
@@ -315,7 +312,7 @@ const updateComment = async (req, res) => {
 
     res.status(200).json({
         message: result.message,
-        data: formatComment(result.comment, publicProfile(result.comment.author), { includeModeration: req.journal.authorId.equals(req.userObj._id) })
+        data: formatComment(result.comment, commentAuthor(result.comment.author), { includeModeration: req.journal.authorId.equals(req.userObj._id) })
     })
 }
 
@@ -327,14 +324,11 @@ const hideComment = async (req, res) => {
 
     try {
         await session.withTransaction(async () => {
-            const { comment, parentHidden, isAuthor, isCommenter, concealed } = await loadCommentForChange(req, session)
+            const { comment, parentHidden, isAuthor, concealed } = await loadCommentForChange(req, session)
 
-            if (!isAuthor) {
-                throw httpError(
-                    !isCommenter && concealed ? 404 : 403,
-                    !isCommenter && concealed ? "Comment does not exist" : "Only the journal author can change comment visibility"
-                )
-            }
+            // A hidden comment does not exist for anyone except the journal author, including the person who wrote it.
+            if (concealed && !isAuthor) throw httpError(404, "Comment does not exist")
+            if (!isAuthor) throw httpError(403, "Only the journal author can change comment visibility")
 
             if (req.validatedBody.isHidden === comment.isHidden) throw httpError(400, "No changes were made to this comment")
 
@@ -351,7 +345,7 @@ const hideComment = async (req, res) => {
 
     res.status(200).json({
         message: result.message,
-        data: formatComment(result.comment, publicProfile(result.comment.author), { includeModeration: true })
+        data: formatComment(result.comment, commentAuthor(result.comment.author), { includeModeration: true })
     })
 }
 
@@ -418,7 +412,7 @@ const listReplies = async (req, res) => {
         total ? "Replies retrieved successfully" : "No replies yet",
         replies.map(reply => formatComment(
             reply,
-            publicProfile(reply.author),
+            commentAuthor(reply.author),
             { includeModeration: isAuthor } // No replyCount. A reply is the bottom of the thread.
         )),
         total,

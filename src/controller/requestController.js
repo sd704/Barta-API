@@ -1,6 +1,7 @@
 const mongoose = require("mongoose")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
+const { User } = require("../model/user")
 const { Journal } = require("../model/journal")
 const { Follow } = require("../model/follow")
 const { SAFE_DATA } = require("../utils/constant")
@@ -154,11 +155,16 @@ const blockRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
 
     // Check if connection request exists -> Done by blockListCheck middleware
+    const targetUser = await User.findById(targetUserId).select("fullName email")
+    if (!targetUser) return res.status(404).json({ message: `User not found!` })
 
     const connectionObj = { senderId: userId, receiverId: targetUserId }
     const blockRequest = new BlockList(connectionObj)
     await blockRequest.save()
-    return res.status(200).json({ message: `User blocked successfully!` })
+    return res.status(200).json({
+        message: `User blocked successfully!`,
+        data: { _id: targetUser._id, fullName: targetUser.fullName, email: targetUser.email }
+    })
 }
 
 const unblockRequest = async (req, res, next) => {

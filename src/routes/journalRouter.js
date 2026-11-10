@@ -26,7 +26,7 @@ journalRouter.delete("/api/journals/:jid",
     tokenAuth, validateIds("jid"), loadJournal, requireJournalAuthor, deleteJournal)
 
 journalRouter.get("/api/journals/:jid/chapters",
-    tokenAuth, validateIds("jid"), loadJournal, requireJournalAuthor, getChapters)
+    tokenAuth, validateIds("jid"), loadJournal, resolveJournalAccess, getChapters)
 
 journalRouter.delete("/api/journals/:jid/chapters/:cid",
     tokenAuth, validateIds("jid", "cid"), loadJournal, requireJournalAuthor, deleteChapter)

@@ -16,7 +16,8 @@ const getFollowedJournals = async (req, res) => {
     const follows = await Follow.find({ followerId: userId, status: "active" }).sort({ createdAt: -1 }).lean() // most recently followed first
     const journalIds = follows.map(follow => follow.journalId)
 
-    const journals = await Journal.find({ _id: { $in: journalIds } }).select("-chapters").populate({ path: "author", select: AUTHOR_CARD_FIELDS }).lean()
+    const journals = await Journal.find({ _id: { $in: journalIds } })
+        .select("-chapters -pinned").populate({ path: "author", select: AUTHOR_CARD_FIELDS }).lean()
     const journalById = new Map(journals.map(journal => [journal._id.toString(), journal])) // Follow order is preserved by looking up each follow.
 
     const authorIds = journals.map(journal => journal.authorId)

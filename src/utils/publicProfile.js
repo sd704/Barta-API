@@ -12,6 +12,15 @@ const publicProfile = user => user ? ({
 // A missing user, such as a deleted follower, has no stored name.
 const displayName = user => user?.fullName || "This user"
 
+// A comment stays after its author deletes their account. Readers see this name and no profile id.
+const commentAuthor = user => publicProfile(user) || {
+    fullName: "Deleted User",
+    firstName: null,
+    lastName: null,
+    pfp: null,
+    about: null
+}
+
 // Inbox and live message cards. An unknown user keeps the id used by /messages/:uid and nothing else.
 const visibleChatUser = user => ({
     _id: user._id,
@@ -27,6 +36,7 @@ const hiddenChatUser = id => ({ _id: id, isUnknown: true })
 module.exports = {
     publicProfile,
     displayName,
+    commentAuthor,
     visibleChatUser,
     hiddenChatUser
 }
