@@ -3,6 +3,7 @@ const { BlockList } = require("../model/blocklist")
 const { Connection } = require("../model/connection")
 const { SAFE_DATA } = require("../utils/constant")
 const mongoose = require('mongoose')
+const { participantKey } = require("../utils/participantKey")
 
 const findUsersByName = async (req, res, next) => {
     const { username } = req.query
@@ -66,14 +67,7 @@ const findUserById = async (req, res, next) => {
     const result = await User.findById(id)
     if (!result) { return res.status(404).json({ message: `User not found!` }) }
 
-    // BlockList Check
-    const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId }).lean()
-    if (searchResult) { return res.status(404).json({ message: `User not found!` }) }
-
-    let data = result.filterSafeData()
-
-    // Attaching connection status
-    const participants = [userId.toString(), id].sort().join('|')
+    const participants = participantKey(userId, id)
 
     // Run Parallel
     const [existing, blocked] = await Promise.all([
@@ -81,12 +75,16 @@ const findUserById = async (req, res, next) => {
         BlockList.findOne({ participants }).lean(),
     ])
 
-    data = {
-        ...data,
+    // BlockList Check. A block from them hides the user, a block from me is shown as blockedByMe.
+    if (blocked && !blocked.senderId.equals(userId)) { return res.status(404).json({ message: `User not found!` }) }
+
+    // Attaching connection status
+    const data = {
+        ...result.filterSafeData(),
         connectionData: {
             status: existing ? existing.status : null,
             senderId: existing ? existing.senderId : null,
-            blockedByMe: blocked ? (blocked.senderId.toString() === userId.toString()) : false
+            blockedByMe: Boolean(blocked)
         }
     }
 

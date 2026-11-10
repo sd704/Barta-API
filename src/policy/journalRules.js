@@ -1,5 +1,6 @@
 // The allowed entry visibilities for each journal visibility live in constant.js so the schema and this check stay aligned.
 const { ENTRY_VISIBILITY_BY_JOURNAL } = require("../utils/constant")
+const { httpError } = require("../utils/httpError")
 
 // Decides the visibility stored on a new or edited entry.
 // Used by entryController
@@ -8,9 +9,7 @@ const entryVisibilityForJournal = (journalVisibility, requestedVisibility) => {
     if (requestedVisibility === undefined) return journalVisibility // Omitting the field means "match the journal visibility"
 
     if (!allowed.includes(requestedVisibility)) {
-        const error = new Error(`This journal only allows entry visibility: ${allowed.join(", ")}`)
-        error.statusCode = 400
-        throw error
+        throw httpError(400, `This journal only allows entry visibility: ${allowed.join(", ")}`)
     }
 
     return requestedVisibility
@@ -21,11 +20,7 @@ const entryVisibilityForJournal = (journalVisibility, requestedVisibility) => {
 const commentsAllowedForVisibility = (visibility, commentsAllowed) => {
     if (visibility !== "private") return commentsAllowed
 
-    if (commentsAllowed === true) {
-        const error = new Error("Comments are not allowed when visibility is private")
-        error.statusCode = 400
-        throw error
-    }
+    if (commentsAllowed === true) throw httpError(400, "Comments are not allowed when visibility is private")
 
     return false
 }

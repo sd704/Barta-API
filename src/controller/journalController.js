@@ -13,6 +13,8 @@ const { commentsAllowedForVisibility } = require("../policy/journalRules")
 const { canReadEntryWithAccess } = require("../policy/journalAccessPolicy")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { refreshJournalSummary } = require("../services/journalSummaryService")
+const { httpError } = require("../utils/httpError")
+const { participantKey } = require("../utils/participantKey")
 
 // For sorting using query
 const SORTS = {
@@ -47,7 +49,7 @@ const getUserJournals = async (req, res) => {
 
     if (userId.equals(authorId)) return getOwnJournals(req, res)
 
-    const participants = [userId.toString(), authorId].sort().join("|")
+    const participants = participantKey(userId, authorId)
 
     // Check Connection with user
     const [blocked, connection, follows] = await Promise.all([
@@ -159,19 +161,13 @@ const applyChapterList = (journal, chapterList) => {
     const existing = new Map(journal.chapters.map(chapter => [chapter._id.toString(), chapter]))
 
     for (const { cid } of chapterList) {
-        if (cid && !existing.has(cid)) {
-            const error = new Error(`Chapter does not belong to this journal: ${cid}`)
-            error.statusCode = 400
-            throw error
-        }
+        if (cid && !existing.has(cid)) throw httpError(400, `Chapter does not belong to this journal: ${cid}`)
     }
 
     // Duplicates were rejected by validation, so equal counts means every existing chapter was sent.
     // A smaller count means a chapter is missing, e.g. another tab added one. Chapters are never deleted from this list.
     if (chapterList.filter(item => item.cid).length !== existing.size) {
-        const error = new Error("chapters must include every existing chapter exactly once")
-        error.statusCode = 409
-        throw error
+        throw httpError(409, "chapters must include every existing chapter exactly once")
     }
 
     journal.chapters = chapterList.map((item, index) => {
@@ -195,11 +191,7 @@ const updateJournal = async (req, res) => {
     try {
         await session.withTransaction(async () => {
             const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            if (!journal) {
-                const error = new Error("Journal does not exist")
-                error.statusCode = 404
-                throw error
-            }
+            if (!journal) throw httpError(404, "Journal does not exist")
 
             const { chapters, ...updates } = req.validatedBody // The chapter list is applied separately
 
@@ -292,11 +284,7 @@ const deleteJournal = async (req, res) => {
             await Entry.deleteMany({ journalId: req.journal._id }, { session })
 
             const deleted = await Journal.deleteOne({ _id: req.journal._id, authorId: req.userObj._id }, { session })
-            if (!deleted.deletedCount) {
-                const error = new Error("Journal does not exist")
-                error.statusCode = 404
-                throw error
-            }
+            if (!deleted.deletedCount) throw httpError(404, "Journal does not exist")
         })
     } finally {
         await session.endSession()

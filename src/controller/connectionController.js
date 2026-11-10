@@ -2,7 +2,7 @@ const { User } = require("../model/user")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
-const mongoose = require('mongoose')
+const { participantKey } = require("../utils/participantKey")
 
 const receivedRequests = async (req, res, next) => {
     const userId = req.userObj._id
@@ -37,7 +37,7 @@ const existingConnections = async (req, res, next) => {
         $or: [{ senderId: userId, receiverId: { $nin: userBlockList } }, { senderId: { $nin: userBlockList }, receiverId: userId }]
     }).populate("senderId", SAFE_DATA).populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
     const responseObj = searchResult.filter(item => item.senderId && item.receiverId)
-        .map(item => item.senderId._id.toString() === userId.toString() ? item.receiverId : item.senderId)
+        .map(item => item.senderId._id.equals(userId) ? item.receiverId : item.senderId)
     return res.status(200).json({ message: `List of connected users`, data: responseObj })
 }
 
@@ -77,8 +77,7 @@ const blockedUsers = async (req, res, next) => {
 const getConnectionStatus = async (req, res, next) => {
     const userId = req.userObj._id
     const targetUserId = req.params.uid
-
-    const participants = [userId.toString(), targetUserId].sort().join('|')
+    const participants = participantKey(userId, targetUserId)
 
     // Run Parallel
     const [existing, blocked] = await Promise.all([

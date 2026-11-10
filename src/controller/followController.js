@@ -2,13 +2,13 @@ const mongoose = require("mongoose")
 const { Journal } = require("../model/journal")
 const { Follow } = require("../model/follow")
 const { User } = require("../model/user")
-const { BlockList } = require("../model/blocklist")
 const { Subscription } = require("../model/subscription")
 const { httpError } = require("../utils/httpError")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { PUBLIC_PROFILE_FIELDS } = require("../utils/constant")
 const { displayName } = require("../utils/publicProfile")
-const { loadRelationships } = require("../services/journalReaderContext")
+const { loadRelationships, blockedUserIds } = require("../services/journalReaderContext")
+const { decrementFollowerCount } = require("../services/followerCount")
 const { journalDiscoveryError } = require("../policy/journalAccessPolicy")
 
 // For POST "/api/journals/:jid/follow"
@@ -101,7 +101,7 @@ const unfollowJournal = async (req, res) => {
             if (!deleted) throw httpError(404, "You are not following this journal")
 
             if (deleted.status === "active") {
-                await Journal.updateOne({ _id: journalId, followerCount: { $gt: 0 } }, { $inc: { followerCount: -1 } }, { session })
+                await decrementFollowerCount(journalId, session)
             }
 
             const relationships = await loadRelationships(followerId, [journal.authorId], session)
@@ -142,9 +142,7 @@ const getFollowers = async (req, res) => {
     }
 
     if (!req.journalAccess.isAuthor) {
-        const blocks = await BlockList.find({ $or: [{ senderId: req.userObj._id }, { receiverId: req.userObj._id }] }).select("senderId receiverId").lean()
-        const blockedIds = blocks.map(block => block.senderId.equals(req.userObj._id) ? block.receiverId : block.senderId)
-        query.followerId = { $nin: blockedIds }
+        query.followerId = { $nin: await blockedUserIds(req.userObj._id) }
     }
 
     const [follows, total, pendingCount] = await Promise.all([
@@ -199,11 +197,7 @@ const reviewFollower = async (req, res) => {
                     const removed = await Follow.findOneAndDelete({ journalId, followerId }, { session })
 
                     if (removed?.status === "active") {
-                        await Journal.updateOne(
-                            { _id: journalId, followerCount: { $gt: 0 } }, // $gt: 0 prevents a negative count
-                            { $inc: { followerCount: -1 } },
-                            { session }
-                        )
+                        await decrementFollowerCount(journalId, session)
                     }
 
                     // throw httpError(404, "This user no longer exists, so the follow record was removed")
@@ -239,11 +233,7 @@ const reviewFollower = async (req, res) => {
             if (!deleted) throw httpError(404, "No follow request exists for this user")
 
             if (deleted.status === "active") {
-                await Journal.updateOne(
-                    { _id: journalId, followerCount: { $gt: 0 } }, // $gt: 0 prevents a negative count
-                    { $inc: { followerCount: -1 } },
-                    { session }
-                )
+                await decrementFollowerCount(journalId, session)
             }
 
             result = {

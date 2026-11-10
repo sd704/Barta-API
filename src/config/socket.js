@@ -7,8 +7,9 @@ const socket = require('socket.io')
 const { Chat } = require('../model/chat')
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
-const { SAFE_DATA, CHAT_USER_FIELDS, MESSAGE_TEXT_MAX } = require("../utils/constant")
+const { CHAT_USER_FIELDS, MESSAGE_TEXT_MAX } = require("../utils/constant")
 const { visibleChatUser } = require("../utils/publicProfile")
+const { participantKey } = require("../utils/participantKey")
 
 // Simple Map of online user IDs and count no. of logged in devices
 const onlineUsers = new Map() // [ {uid, count} ]
@@ -18,7 +19,7 @@ const onlineUsers = new Map() // [ {uid, count} ]
 const findChatConnection = async (userId, targetUserId) => {
     if (typeof targetUserId !== "string" || !mongoose.Types.ObjectId.isValid(targetUserId)) return null
 
-    const participants = [userId, targetUserId].sort().join("|")
+    const participants = participantKey(userId, targetUserId)
     const [connection, isBlocked, targetExists] = await Promise.all([
         Connection.findOne({ participants, status: "accepted" }).lean(),
         BlockList.findOne({ participants }).lean(),
@@ -84,21 +85,20 @@ const initializeSocket = (server) => {
         socket.on("presence:subscribe", async ({ userIds }) => {
 
             // We don't let blocked users know online status
-            const participantKeys = userIds.map(targetId => [loggedInUserId, targetId.toString()].sort().join("|"))
+            const participantKeys = userIds.map(targetId => participantKey(loggedInUserId, targetId))
 
             const [cList, bList] = await Promise.all([
-                Connection.find({ participants: { $in: participantKeys } }).lean(),
+                Connection.find({ participants: { $in: participantKeys }, status: "accepted" }).lean(),
                 BlockList.find({ participants: { $in: participantKeys } }).lean()
             ])
 
-            const connectedSet = new Set(cList.map(c => c.participants))
+            const connectedSet = new Set(cList.map(c => c.participants)) // set of participantKeys where accepted
             const blockedSet = new Set(bList.map(block => block.participants)) // set of participantKeys where blocked
 
-            for (const userId of userIds) {
-                const participantKey = [loggedInUserId, userId].sort().join("|")
-                const connectionObj = cList.find(c => c.participants === participantKey)
+            for (const [index, userId] of userIds.entries()) {
+                const key = participantKeys[index]
 
-                if (!blockedSet.has(participantKey) && connectedSet.has(participantKey) && connectionObj?.status == "accepted") {
+                if (!blockedSet.has(key) && connectedSet.has(key)) {
                     socket.join(`presence:${userId}`)
                     const userLastSeen = await User.findById(userId).select("lastSeen").lean()
                     const count = onlineUsers.get(userId) || 0
@@ -139,11 +139,11 @@ const initializeSocket = (server) => {
                 const targetUserData = visibleChatUser(chat.participants.find(user => !user._id.equals(loggedInUserId)))
                 const loggedInUserData = visibleChatUser(chat.participants.find(user => !user._id.equals(targetUserId)))
                 const connectionData = { status: friendConnection.status, senderId: friendConnection.senderId, blockedByMe: false }
+                const lastMessage = chat.messages[chat.messages.length - 1]
 
                 // emit -> sending msg to all clients in a chat
-                io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: targetUserData, connectionData })
-                io.to(targetUserId).emit("messageReceived", { chatId: chat._id, lastMessage: chat.messages[chat.messages.length - 1], receiver: loggedInUserData, connectionData })
-
+                io.to(loggedInUserId).emit("messageReceived", { chatId: chat._id, lastMessage, receiver: targetUserData, connectionData })
+                io.to(targetUserId).emit("messageReceived", { chatId: chat._id, lastMessage, receiver: loggedInUserData, connectionData })
             } catch (err) {
                 console.error(err)
             }

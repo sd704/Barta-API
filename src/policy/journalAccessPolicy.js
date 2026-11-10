@@ -2,7 +2,7 @@
 // journalAccess, journalReaderContext and controllers use these after already loading data
 
 // Pair key for Connection.participants and Blocklist.participants
-const participantKey = (leftId, rightId) => [leftId.toString(), rightId.toString()].sort().join("|")
+const { participantKey } = require("../utils/participantKey")
 
 // Author check
 const isAuthor = (journal, userId) => journal.authorId.equals(userId)
@@ -122,7 +122,6 @@ const fullJournalAccessError = (journal, userId, relationships, followedIds, sub
 }
 
 module.exports = {
-    participantKey,
     isJournalHiddenFromViewer,
     resolveAccessMode,
     canReadEntryWithAccess,

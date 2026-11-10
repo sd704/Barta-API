@@ -11,6 +11,7 @@ const { commentsClosedMessage } = require("../policy/journalRules")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { PUBLIC_PROFILE_FIELDS } = require("../utils/constant")
 const { publicProfile } = require("../utils/publicProfile")
+const { participantKey } = require("../utils/participantKey")
 
 // Comment shape for list, get, create, reply, and update
 const formatComment = (comment, author, options = {}) => ({
@@ -220,8 +221,7 @@ const createReply = async (req, res) => {
 
             const isAuthor = req.journal.authorId.equals(req.userObj._id)
             if (!isAuthor) {
-                const participants = [req.userObj._id.toString(), parent.userId.toString()].sort().join("|")
-                const blocked = await BlockList.exists({ participants }).session(session)
+                const blocked = await BlockList.exists({ participants: participantKey(req.userObj._id, parent.userId) }).session(session)
                 if (blocked) throw httpError(404, "Comment does not exist")
             }
 

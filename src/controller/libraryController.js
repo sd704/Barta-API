@@ -19,9 +19,10 @@ const getFollowedJournals = async (req, res) => {
     const journals = await Journal.find({ _id: { $in: journalIds } }).select("-chapters").populate({ path: "author", select: AUTHOR_CARD_FIELDS }).lean()
     const journalById = new Map(journals.map(journal => [journal._id.toString(), journal])) // Follow order is preserved by looking up each follow.
 
-    const relationships = await loadRelationships(userId, journals.map(journal => journal.authorId))
+    const authorIds = journals.map(journal => journal.authorId)
+    const relationships = await loadRelationships(userId, authorIds)
     const followedIds = new Set(follows.map(follow => follow.journalId.toString())) // Selected journals are readable because these follows are active.
-    const subscribedAuthorIds = await loadSubscribedAuthorIds(userId, journals.map(journal => journal.authorId))
+    const subscribedAuthorIds = await loadSubscribedAuthorIds(userId, authorIds)
 
     const status = req.query.status // Optional journal status: active, paused, completed, or archived.
     const visibleJournals = follows.reduce((journals, follow) => {
@@ -75,10 +76,11 @@ const getSavedEntries = async (req, res) => {
     const journals = await Journal.find({ _id: { $in: journalIds } }).select("title visibility authorId").lean()
     const journalById = new Map(journals.map(journal => [journal._id.toString(), journal]))
 
+    const authorIds = journals.map(journal => journal.authorId)
     const [relationships, follows, subscribedAuthorIds] = await Promise.all([
-        loadRelationships(userId, journals.map(journal => journal.authorId)),
+        loadRelationships(userId, authorIds),
         Follow.find({ followerId: userId, journalId: { $in: journals.map(journal => journal._id) }, status: "active" }).select("journalId").lean(),
-        loadSubscribedAuthorIds(userId, journals.map(journal => journal.authorId))
+        loadSubscribedAuthorIds(userId, authorIds)
     ])
 
     const followedIds = new Set(follows.map(follow => follow.journalId.toString()))

@@ -2,18 +2,16 @@ const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { Follow } = require("../model/follow")
 const { Subscription } = require("../model/subscription")
-const { participantKey } = require("../policy/journalAccessPolicy")
+const { participantKey } = require("../utils/participantKey")
+
+// Unique id strings. Duplicates and blanks (null, undefined, "") are dropped.
+const uniqueIdStrings = (ids) => [...new Set(ids.filter(Boolean).map(id => id.toString()))]
 
 // Load Block and friendship keys for the authors in a list.
 // userId — the reader's uid. authorIds — author ids from one or many journals (Duplicates and blanks are allowed).
 const loadRelationships = async (userId, authorIds, session) => {
 
-    const keys = [
-        ...new Set(authorIds // Removes duplicate IDs. The spread operator converts the Set back into an array.
-            .filter(Boolean) // Removes falsy values such as null, undefined, "", and false.
-            .map(id => id.toString()) // Converts every ObjectId or other valid ID into a string.
-        )
-    ]
+    const keys = uniqueIdStrings(authorIds)
         .filter(authorId => authorId !== userId.toString()) // Skip the reader; they are not their own friend or block.
         .map(authorId => participantKey(userId, authorId)) // Save participant keys
 
@@ -35,12 +33,8 @@ const loadRelationships = async (userId, authorIds, session) => {
 
 // Author ids this reader has paid/subscribed. One id covers every subscribed journal by that author.
 const loadSubscribedAuthorIds = async (userId, authorIds, session) => {
-    const uniqueIds = [
-        ...new Set(authorIds // Removes duplicate IDs. The spread operator converts the Set back into an array.
-            .filter(Boolean) // Removes falsy values such as null, undefined, "", and false.
-            .map(id => id.toString()) // Converts every ObjectId or other valid ID into a string.
-        )
-    ]
+    const uniqueIds = uniqueIdStrings(authorIds)
+
     if (!uniqueIds.length) return new Set()
 
     const subscriptions = await Subscription.find({ subscriberId: userId, authorId: { $in: uniqueIds } }).select("authorId").session(session).lean()

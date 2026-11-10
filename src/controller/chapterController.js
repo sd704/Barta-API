@@ -5,6 +5,8 @@ const { Comment } = require("../model/comment")
 const { Like } = require("../model/like")
 const { Bookmark } = require("../model/bookmark")
 const { refreshJournalSummary } = require("../services/journalSummaryService")
+const { refreshEntryStats } = require("../services/journalStats")
+const { httpError } = require("../utils/httpError")
 
 // Adding, renaming and reordering chapters is done by PATCH "/api/journals/:jid" (updateJournal "chapters")
 
@@ -31,12 +33,7 @@ const deleteChapter = async (req, res) => {
             // .session(session) -> read inside the transaction
             const journal = await Journal.findOne({ _id: journalId, authorId: req.userObj._id }).session(session)
             const chapter = journal?.chapters.id(chapterId)
-
-            if (!chapter) {
-                const error = new Error("Chapter does not exist")
-                error.statusCode = 404
-                throw error // throw will abort this transaction
-            }
+            if (!chapter) throw httpError(404, "Chapter does not exist") // throw will abort this transaction
 
             const entries = await Entry.find({ journalId, chapterId }).select("_id").session(session).lean()
             const entryIds = entries.map(entry => entry._id)
@@ -53,13 +50,7 @@ const deleteChapter = async (req, res) => {
             journal.chapters.sort((a, b) => a.order - b.order).forEach((item, index) => { item.order = index + 1 })
 
             // entryCount, milestoneCount, latestEntry are Journal data which need to be updated everytime entries change
-            const entryCount = await Entry.countDocuments({ journalId }).session(session) // Count remaining Entries
-            const milestoneCount = await Entry.countDocuments({ journalId, type: "milestone" }).session(session) // Count remaining Entries which are milestones
-            const latestEntry = await Entry.findOne({ journalId }).sort({ updatedAt: -1 }).select("updatedAt").session(session).lean() // Same rule as entry delete
-
-            journal.entryCount = entryCount
-            journal.milestoneCount = milestoneCount
-            journal.lastEntryAt = latestEntry?.updatedAt || null
+            await refreshEntryStats(journal, session)
             await journal.save({ session }) // session keeps it in the transaction
         })
     } finally {

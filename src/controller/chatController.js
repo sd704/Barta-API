@@ -4,21 +4,21 @@ const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { visibleChatUser, hiddenChatUser } = require("../utils/publicProfile")
 const { CHAT_USER_FIELDS } = require("../utils/constant")
+const { participantKey } = require("../utils/participantKey")
 const mongoose = require("mongoose")
 
 const emptyConnection = { status: null, senderId: null, blockedByMe: false }
 
 // Get messages between 2 users. Profiles are not included. A deleted account can still have chats.
 const getMessages = async (req, res) => {
-    const userId = req.userObj._id.toString()
     const targetUserId = req.params.uid
 
     if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
         return res.status(404).json({ message: "User not found!" })
     }
 
-    const participantsKey = [req.userObj._id.toString(), targetUserId].sort().join("|")
-    const chat = await Chat.findOne({ participantsKey }).select("messages").lean()
+    const chat = await Chat.findOne({ participantsKey: participantKey(req.userObj._id, targetUserId) })
+        .select("messages").lean()
 
     if (!chat) return res.status(404).json({ message: "No messages found!" })
 
@@ -63,7 +63,7 @@ const getChats = async (req, res) => {
 
     // List of user Ids
     const peerIds = validChats.map(chat => chat.peerId)
-    const participantKeys = peerIds.map(peerId => [userId.toString(), peerId.toString()].sort().join("|"))
+    const participantKeys = peerIds.map(peerId => participantKey(userId, peerId))
 
     const [users, connections, blocks] = await Promise.all([
         User.find({ _id: { $in: peerIds } }).select(CHAT_USER_FIELDS).lean(),
@@ -75,12 +75,11 @@ const getChats = async (req, res) => {
     const connectionByKey = new Map(connections.map(connection => [connection.participants, connection]))
     const blockByKey = new Map(blocks.map(block => [block.participants, block]))
 
-    const data = validChats.map(chat => {
+    const data = validChats.map((chat, index) => {
         const peerId = chat.peerId
-        const participantKey = [userId.toString(), peerId.toString()].sort().join("|")
         const user = userById.get(peerId.toString())
-        const connection = connectionByKey.get(participantKey)
-        const block = blockByKey.get(participantKey)
+        const connection = connectionByKey.get(participantKeys[index])
+        const block = blockByKey.get(participantKeys[index])
         const blockedByThem = Boolean(block && !block.senderId.equals(userId))
 
         // A missing account and a person who blocked me look the same. Their profile is not sent.

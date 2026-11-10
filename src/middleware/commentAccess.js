@@ -4,6 +4,7 @@ const { Entry } = require("../model/entry")
 const { BlockList } = require("../model/blocklist")
 const { requireEntriesAccess, requireEntryReadAccess } = require("./journalAccess")
 const { commentsClosedMessage } = require("../policy/journalRules")
+const { participantKey } = require("../utils/participantKey")
 
 // Comment access check -> Used after resolveJournalAccess/requireEntriesAccess
 const requireCommentAccess = (req, res, next) => {
@@ -93,8 +94,7 @@ const requireVisibleComment = async (req, res, next) => {
     }
 
     // If block exists between Viewer and Commentator, they can't view the comment
-    const participants = [req.userObj._id.toString(), req.comment.userId.toString()].sort().join("|")
-    const blocked = await BlockList.exists({ participants })
+    const blocked = await BlockList.exists({ participants: participantKey(req.userObj._id, req.comment.userId) })
     if (blocked) return res.status(404).json({ message: "Comment does not exist" })
 
     next()
