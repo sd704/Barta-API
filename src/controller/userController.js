@@ -1,4 +1,6 @@
 const { User } = require("../model/user")
+const mongoose = require("mongoose")
+const { deleteAccountData } = require("../services/accountCleanup")
 const bcrypt = require('bcrypt')
 const validator = require('validator')
 const { ALLOWED_UPDATES } = require("../utils/constant")
@@ -71,11 +73,23 @@ const updateUser = async (req, res, next) => {
     res.status(200).json({ message: `User data updated successfully`, data, updatedFields })
 }
 
+// Deletes the account and everything tied to it in one transaction. Chats stay, they show as Unknown User.
 const deleteUser = async (req, res, next) => {
     const deletedUser = req.userObj.filterSafeData()
-    await req.userObj.deleteOne()
+    const session = await mongoose.startSession()
+
+    try {
+        await session.withTransaction(async () => {
+            await deleteAccountData(req.userObj._id, session)
+            await req.userObj.deleteOne({ session })
+        })
+    } finally {
+        await session.endSession()
+    }
+
     res.status(200).clearCookie("token").json({ message: `User deleted successfully`, data: deletedUser })
     // res.status(200).cookie("token", null, { expires: new Date(Date.now()) }).json({ message: `User deleted successfully`, data: deletedUser })
 }
+
 
 module.exports = { getLoggedInUser, signupUser, updateUser, deleteUser }
