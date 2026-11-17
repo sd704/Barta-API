@@ -24,7 +24,7 @@ const resolveAccessMode = (journal, { isFriend, isFollower, isSubscriber }) => {
     switch (journal.visibility) {
         case "public": return "full" // Authenticated readers see entries, progress, and the summary.
         case "friends": return isFriend ? "full" : "hidden" // A non-friend gets the same 404 as a missing journal.
-        case "selected": return isFollower ? "full" : "preview" // Not yet approved: journal detail, every entry marked hidden.
+        case "selected": return isFollower ? "full" : "preview" // Not yet approved: journal detail, every entry is hidden.
         case "subscribed": return isSubscriber ? "full" : "teaser" // Not yet paid: journal detail plus the first three non-private titles.
         default: return "hidden" // Private journals, and anything unexpected, are concealed.
     }
@@ -133,7 +133,6 @@ const commentScopeError = (access, entry) => {
 }
 
 module.exports = {
-    isJournalHiddenFromViewer,
     resolveAccessMode,
     canReadEntryWithAccess,
     readableEntryVisibilities,

@@ -1,6 +1,6 @@
 const { Journal } = require("../model/journal")
-const { Entry } = require("../model/entry")
 const { loadAccessFlagsForJournal } = require("../services/journalReaderContext")
+const { loadEntryWithJournal } = require("../services/entryLoader")
 const { resolveAccessMode, canReadEntryWithAccess } = require("../policy/journalAccessPolicy")
 
 // Load Journal from DB for Routes with :jid
@@ -52,10 +52,8 @@ const requireEntriesAccess = (req, res, next) => {
 // For Routes with only :eid. The entry stores the journal it belongs to.
 // Sets req.entry and req.journal, so the access checks after it work the same as on Routes with :jid
 const loadEntryJournal = async (req, res, next) => {
-    const entry = await Entry.findById(req.params.eid)
+    const { entry, journal } = await loadEntryWithJournal(req.params.eid)
     if (!entry) return res.status(404).json({ message: "Entry does not exist" })
-
-    const journal = await Journal.findById(entry.journalId)
     if (!journal) return res.status(404).json({ message: "Journal does not exist" })
 
     req.entry = entry

@@ -1,4 +1,3 @@
-const mongoose = require("mongoose")
 const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { Like } = require("../model/like")
@@ -10,6 +9,7 @@ const { readableEntryVisibilities } = require("../policy/journalAccessPolicy")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { httpError } = require("../utils/httpError")
 const { refreshEntryStats } = require("../services/journalStats")
+const { runInTransaction } = require("../utils/transaction")
 
 // The chapter id, if the chapter belongs to this journal
 const findChapterId = (journal, chapterId) => {
@@ -51,142 +51,120 @@ const getEntries = async (req, res) => {
 
 // For GET "/api/entries/:eid"
 // No DB call as loadEntryJournal already fetched this entry
-const getEntry = async (req, res) => {
-    res.status(200).json({ message: "Entry retrieved successfully", data: req.entry })
-}
+const getEntry = async (req, res) => { res.status(200).json({ message: "Entry retrieved successfully", data: req.entry }) }
 
 // For POST "/api/journals/:jid/entries", Journal Author only
 const createEntry = async (req, res) => {
-    const session = await mongoose.startSession()
-    let createdEntry
+    const createdEntry = await runInTransaction(async session => {
+        const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
+        if (!journal) throw httpError(404, "Journal does not exist")
 
-    try {
-        await session.withTransaction(async () => {
-            const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            if (!journal) throw httpError(404, "Journal does not exist")
+        const { chapterId, newChapter, progress, ...entryData } = req.validatedBody
+        entryData.visibility = entryVisibilityForJournal(journal.visibility, entryData.visibility)
+        const commentsAllowed = commentsAllowedForVisibility(entryData.visibility, entryData.commentsAllowed)
 
-            const { chapterId, newChapter, progress, ...entryData } = req.validatedBody
-            entryData.visibility = entryVisibilityForJournal(journal.visibility, entryData.visibility)
-            const commentsAllowed = commentsAllowedForVisibility(entryData.visibility, entryData.commentsAllowed)
+        if (commentsAllowed === undefined) {
+            delete entryData.commentsAllowed // Public and other non-private entries keep the schema default when omitted.
+        } else {
+            entryData.commentsAllowed = commentsAllowed // Private stores false.
+        }
 
-            if (commentsAllowed === undefined) {
-                delete entryData.commentsAllowed // Public and other non-private entries keep the schema default when omitted.
-            } else {
-                entryData.commentsAllowed = commentsAllowed // Private stores false. A true value on private was already rejected.
-            }
+        // chapterId intentionally takes priority over newChapter.
+        const selectedChapterId = chapterId ? findChapterId(journal, chapterId) : addChapter(journal, newChapter)
 
-            // chapterId intentionally takes priority over newChapter.
-            const selectedChapterId = chapterId ? findChapterId(journal, chapterId) : addChapter(journal, newChapter)
+        const [entry] = await Entry.create([{
+            ...entryData,
+            journalId: journal._id,
+            authorId: req.userObj._id,
+            chapterId: selectedChapterId
+        }], { session })
 
-            const result = await Entry.create([{
-                ...entryData,
-                journalId: journal._id,
-                authorId: req.userObj._id,
-                chapterId: selectedChapterId
-            }], { session })
+        journal.entryCount += 1
+        if (entry.type === "milestone") {
+            journal.milestoneCount += 1
+        }
 
-            createdEntry = result[0]
+        journal.lastEntryAt = new Date()
 
-            journal.entryCount += 1
-            if (createdEntry.type === "milestone") {
-                journal.milestoneCount += 1
-            }
+        if (progress !== undefined) {
+            journal.progress = progress
+            journal.endedAt = progress === 100 ? new Date() : null
+        }
 
-            journal.lastEntryAt = new Date()
+        await journal.save({ session }) // milestoneCount, progress, lastEntryAt need to be updated in Journal
+        return entry
+    })
 
-            if (progress !== undefined) {
-                journal.progress = progress
-                journal.endedAt = progress === 100 ? new Date() : null
-            }
-
-            await journal.save({ session }) // milestoneCount, progress, lastEntryAt need to be updated in Journal
-        })
-    } finally {
-        await session.endSession()
-    }
-
-    await refreshJournalSummary(req.journal._id) // After commit. A summary failure keeps the old summary and cannot fail this entry create.
+    await refreshJournalSummary(req.journal._id) // After commit. A failed transaction throws before this line. A summary failure keeps the old summary.
     res.status(201).json({ message: "Entry created successfully", data: createdEntry })
 }
 
 // For PATCH "/api/entries/:eid", Journal Author only
 const updateEntry = async (req, res) => {
-    const session = await mongoose.startSession()
-    let updatedEntry
+    const updatedEntry = await runInTransaction(async session => {
+        const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
+        const entry = await Entry.findOne({ _id: req.entry._id, authorId: req.userObj._id }).session(session)
+        if (!journal || !entry) throw httpError(404, "Entry does not exist")
 
-    try {
-        await session.withTransaction(async () => {
-            const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            const entry = await Entry.findOne({ _id: req.entry._id, authorId: req.userObj._id }).session(session)
-            if (!journal || !entry) throw httpError(404, "Entry does not exist")
+        const { chapterId, newChapter, ...updates } = req.validatedBody
+        if (updates.visibility !== undefined) {
+            updates.visibility = entryVisibilityForJournal(journal.visibility, updates.visibility)
+        }
 
-            const { chapterId, newChapter, ...updates } = req.validatedBody
-            if (updates.visibility !== undefined) {
-                updates.visibility = entryVisibilityForJournal(journal.visibility, updates.visibility)
-            }
+        const nextVisibility = updates.visibility === undefined ? entry.visibility : updates.visibility
+        const commentsAllowed = commentsAllowedForVisibility(nextVisibility, updates.commentsAllowed)
 
-            const nextVisibility = updates.visibility === undefined ? entry.visibility : updates.visibility
-            const commentsAllowed = commentsAllowedForVisibility(nextVisibility, updates.commentsAllowed)
-            if (commentsAllowed === undefined) {
-                delete updates.commentsAllowed
-            } else {
-                updates.commentsAllowed = commentsAllowed // Changing an entry to private turns comments off.
-            }
+        if (commentsAllowed === undefined) {
+            delete updates.commentsAllowed
+        } else {
+            updates.commentsAllowed = commentsAllowed // Changing an entry to private turns comments off.
+        }
 
-            if (chapterId) {
-                entry.chapterId = findChapterId(journal, chapterId)
-            } else if (newChapter) {
-                entry.chapterId = addChapter(journal, newChapter)
-            }
+        if (chapterId) {
+            entry.chapterId = findChapterId(journal, chapterId)
+        } else if (newChapter) {
+            entry.chapterId = addChapter(journal, newChapter)
+        }
 
-            const wasMilestone = (entry.type === "milestone")
+        const wasMilestone = (entry.type === "milestone")
 
-            Object.assign(entry, updates)
-            await entry.save({ session })
+        Object.assign(entry, updates)
+        await entry.save({ session })
 
-            const isMilestone = (entry.type === "milestone")
-            if (!wasMilestone && isMilestone) {
-                journal.milestoneCount += 1
-            } else if (wasMilestone && !isMilestone) {
-                journal.milestoneCount = Math.max(0, journal.milestoneCount - 1)
-            }
+        const isMilestone = (entry.type === "milestone")
+        if (!wasMilestone && isMilestone) {
+            journal.milestoneCount += 1
+        } else if (wasMilestone && !isMilestone) {
+            journal.milestoneCount = Math.max(0, journal.milestoneCount - 1)
+        }
 
-            journal.lastEntryAt = new Date()
-            await journal.save({ session })
-            updatedEntry = entry
-        })
-    } finally {
-        await session.endSession()
-    }
+        journal.lastEntryAt = new Date()
+        await journal.save({ session })
+        return entry
+    })
 
-    await refreshJournalSummary(req.journal._id) // After commit. A summary failure keeps the old summary and cannot fail this entry update.
+    await refreshJournalSummary(req.journal._id) // After commit. A failed transaction throws before this line. A summary failure keeps the old summary.
     res.status(200).json({ message: "Entry updated successfully", data: updatedEntry })
 }
 
 // For DELETE "/api/entries/:eid", Journal Author only
 const deleteEntry = async (req, res) => {
-    const session = await mongoose.startSession()
+    await runInTransaction(async session => {
+        const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
+        const entry = await Entry.findOne({ _id: req.entry._id, authorId: req.userObj._id }).session(session)
+        if (!journal || !entry) throw httpError(404, "Entry does not exist")
 
-    try {
-        await session.withTransaction(async () => {
-            const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            const entry = await Entry.findOne({ _id: req.entry._id, authorId: req.userObj._id }).session(session)
-            if (!journal || !entry) throw httpError(404, "Entry does not exist")
+        // One operation at a time. A transaction does not support parallel operations on its session.
+        await Like.deleteMany({ entryId: entry._id }, { session })
+        await Bookmark.deleteMany({ entryId: entry._id }, { session })
+        await Comment.deleteMany({ entryId: entry._id }, { session })
+        await Entry.deleteOne({ _id: entry._id }, { session })
 
-            // One operation at a time. A transaction does not support parallel operations on its session.
-            await Like.deleteMany({ entryId: entry._id }, { session })
-            await Bookmark.deleteMany({ entryId: entry._id }, { session })
-            await Comment.deleteMany({ entryId: entry._id }, { session })
-            await Entry.deleteOne({ _id: entry._id }, { session })
+        await refreshEntryStats(journal, session)
+        await journal.save({ session })
+    })
 
-            await refreshEntryStats(journal, session)
-            await journal.save({ session })
-        })
-    } finally {
-        await session.endSession()
-    }
-
-    await refreshJournalSummary(req.journal._id) // After commit. A summary failure keeps the old summary and cannot fail this entry delete.
+    await refreshJournalSummary(req.journal._id) // After commit. A failed transaction throws before this line. A summary failure keeps the old summary.
     res.status(200).json({ message: "Entry and all associated interactions deleted successfully" })
 }
 
@@ -197,5 +175,3 @@ module.exports = {
     updateEntry,
     deleteEntry
 }
-
-

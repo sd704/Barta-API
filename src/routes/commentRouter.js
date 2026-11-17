@@ -1,7 +1,7 @@
 const express = require("express")
 const { tokenAuth } = require("../middleware/tokenAuth")
-const { validateIds } = require("../middleware/journalValidation")
-const { validateCommentListTarget, validateCommentTarget, validateCommentQuery, validateCommentListQuery, validateNewComment, validateCommentCreate, validateCommentUpdate, validateCommentHide } = require("../middleware/engagementValidation")
+const { validateIds, validatePageQuery } = require("../validation/common")
+const { validateCommentListTarget, validateCommentTarget, validateCommentListQuery, validateNewComment, validateCommentCreate, validateCommentUpdate, validateCommentHide } = require("../middleware/engagementValidation")
 const { resolveJournalAccess } = require("../middleware/journalAccess")
 const { requireCommentsOpen, loadCommentById, loadCommentParent, requireScopedCommentAccess, requireVisibleComment } = require("../middleware/commentAccess")
 const { listComments, getComment, createComment, updateComment, hideComment, deleteComment, listReplies, createReply } = require("../controller/commentController")
@@ -18,7 +18,7 @@ commentRouter.post("/api/comments",
     tokenAuth, validateCommentTarget, ...parentContext, validateNewComment, requireCommentsOpen, createComment)
 
 commentRouter.get("/api/comments/:commentId/replies",
-    tokenAuth, validateIds("commentId"), ...commentContext, validateCommentQuery, requireVisibleComment, listReplies)
+    tokenAuth, validateIds("commentId"), ...commentContext, validatePageQuery, requireVisibleComment, listReplies)
 
 commentRouter.post("/api/comments/:commentId/replies",
     tokenAuth, validateIds("commentId"), ...commentContext, validateCommentCreate, requireCommentsOpen, requireVisibleComment, createReply)
@@ -36,4 +36,3 @@ commentRouter.delete("/api/comments/:commentId",
     tokenAuth, validateIds("commentId"), ...commentContext, deleteComment)
 
 module.exports = commentRouter
-

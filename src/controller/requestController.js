@@ -1,4 +1,3 @@
-const mongoose = require("mongoose")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { User } = require("../model/user")
@@ -7,6 +6,8 @@ const { Follow } = require("../model/follow")
 const { SAFE_DATA } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
 const { decrementFollowerCount } = require("../services/followCounter")
+const { runInTransaction } = require("../utils/transaction")
+
 
 // Helper Functions
 const getUserAndTarget = (req) => ({ userId: req.userObj._id, targetUserId: req.params.uid })
@@ -29,7 +30,7 @@ const sendConnectRequest = async (req, res, next) => {
         return res.status(409).json({ message: `Connection already exists!`, data: formatResponse(existing) })
     }
 
-    // Upsert is an atomic MongoDB operation that updates a document if it exists or inserts a new document if it doesn’t, 
+    // Upsert is an atomic MongoDB operation that updates a document if it exists or inserts a new document if it doesn’t,
     // eliminating the need for separate existence checks and preventing race conditions.
     // We let ignored and rejected users to send request again. We update the old connection request (ignored/rejected)
     const connectionObj = await Connection.findOneAndUpdate(
@@ -117,31 +118,26 @@ const removeRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
     const participants = participantKey(userId, targetUserId)
 
-    const session = await mongoose.startSession()
-    let removed
+    const removed = await runInTransaction(async session => {
+        const connection = await Connection.findOneAndDelete({ participants, status: "accepted" }, { session })
+        if (!connection) return null
 
-    try {
-        await session.withTransaction(async () => {
-            removed = await Connection.findOneAndDelete({ participants, status: "accepted" }, { session })
-            if (!removed) return
+        // Each person may follow the other's friends-only journals. Those follows end with the friendship.
+        // Public, selected, subscribed, and private follows stay.
+        const journals = await Journal.find({ authorId: { $in: [userId, targetUserId] }, visibility: "friends" })
+            .select("_id authorId").session(session)
 
-            // Each person may follow the other's friends-only journals. Those follows end with the friendship.
-            // Public, selected, subscribed, and private follows stay.
-            const journals = await Journal.find({ authorId: { $in: [userId, targetUserId] }, visibility: "friends" })
-                .select("_id authorId").session(session)
+        for (const journal of journals) {
+            const followerId = journal.authorId.equals(userId) ? targetUserId : userId
+            const deleted = await Follow.findOneAndDelete({ followerId, journalId: journal._id }, { session })
 
-            for (const journal of journals) {
-                const followerId = journal.authorId.equals(userId) ? targetUserId : userId
-                const deleted = await Follow.findOneAndDelete({ followerId, journalId: journal._id }, { session })
-
-                if (deleted?.status === "active") {
-                    await decrementFollowerCount(journal._id, session)
-                }
+            if (deleted?.status === "active") {
+                await decrementFollowerCount(journal._id, session)
             }
-        })
-    } finally {
-        await session.endSession()
-    }
+        }
+
+        return connection
+    })
 
     if (removed) {
         await populateUsers(removed)

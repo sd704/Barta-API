@@ -1,4 +1,3 @@
-const mongoose = require("mongoose")
 const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { Follow } = require("../model/follow")
@@ -16,6 +15,7 @@ const { refreshJournalSummary } = require("../services/journalSummaryService")
 const { incrementFollowerCount } = require("../services/followCounter")
 const { httpError } = require("../utils/httpError")
 const { participantKey } = require("../utils/participantKey")
+const { runInTransaction } = require("../utils/transaction")
 
 // For sorting using query
 const SORTS = {
@@ -149,7 +149,7 @@ const getJournal = async (req, res) => {
             const chapterEntries = entriesByChapter.get(chapter._id.toString()) || [] // Specific Chapter Entries
 
             if (access.mode === "preview") {
-                return { ...chapter, entries: chapterEntries.map(entry => ({ _id: entry._id, hidden: true })) }
+                return { ...chapter, entries: [], hiddenEntryCount: chapterEntries.length } // Every entry is hidden, so the list stays empty.
             }
 
             if (access.mode === "teaser") {
@@ -177,7 +177,23 @@ const getJournal = async (req, res) => {
 
 // For POST "/api/journals"
 const createJournal = async (req, res) => {
-    const journal = await Journal.create({ ...req.validatedBody, authorId: req.userObj._id })
+    const journalData = { ...req.validatedBody, authorId: req.userObj._id }
+    const visibility = journalData.visibility || "private" // A new journal with no visibility is private.
+
+    // Not a transaction, so the 400 is sent here. commentsAllowedForVisibility throws the same rule inside updateJournal.
+    if (visibility === "private" && journalData.commentsAllowed === true) {
+        return res.status(400).json({ message: "Comments are not allowed when visibility is private" })
+    }
+
+    const commentsAllowed = commentsAllowedForVisibility(visibility, journalData.commentsAllowed)
+
+    if (commentsAllowed === undefined) {
+        delete journalData.commentsAllowed // Non-private journals keep the schema default when omitted.
+    } else {
+        journalData.commentsAllowed = commentsAllowed // Private stores false, overriding the schema default of true.
+    }
+
+    const journal = await Journal.create(journalData)
     res.status(201).json({ message: "Journal created successfully", data: journal })
 }
 
@@ -211,78 +227,70 @@ const applyChapterList = (journal, chapterList) => {
 // A visibility change rewrites entries that the new journal visibility does not allow.
 // "chapters" adds, renames and reorders chapters in the same save. Deleting a chapter stays on its own route.
 const updateJournal = async (req, res) => {
-    const session = await mongoose.startSession()
-    let updatedJournal
-    let refreshSummary = false
+    // Summary input is the journal text plus chapter titles and order. Visibility and comments do not change that text.
+    const refreshSummary = ["chapters", "title", "about", "category", "progress"]
+        .some(field => req.validatedBody[field] !== undefined)
 
-    try {
-        await session.withTransaction(async () => {
-            const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
-            if (!journal) throw httpError(404, "Journal does not exist")
+    const updatedJournal = await runInTransaction(async session => {
+        const journal = await Journal.findOne({ _id: req.journal._id, authorId: req.userObj._id }).session(session)
+        if (!journal) throw httpError(404, "Journal does not exist")
 
-            const { chapters, ...updates } = req.validatedBody // The chapter list is applied separately
+        const { chapters, ...updates } = req.validatedBody // The chapter list is applied separately
 
-            // Summary input is the journal text plus chapter titles and order. Visibility and comments do not change that text.
-            refreshSummary = Boolean(chapters) || ["title", "about", "category", "progress"]
-                .some(field => updates[field] !== undefined) //  Return true if any item does not match the condition
+        const nextVisibility = updates.visibility || journal.visibility
+        const commentsAllowed = commentsAllowedForVisibility(nextVisibility, updates.commentsAllowed)
 
-            const nextVisibility = updates.visibility || journal.visibility
-            const commentsAllowed = commentsAllowedForVisibility(nextVisibility, updates.commentsAllowed)
+        // For 'private' Journal, commentsAllowed=false, including a journal that was already private.
+        if (commentsAllowed === undefined) {
+            delete updates.commentsAllowed
+        } else {
+            updates.commentsAllowed = commentsAllowed
+        }
 
-            // For 'private' Journal, commentsAllowed=false, including a journal that was already private.
-            if (commentsAllowed === undefined) {
-                delete updates.commentsAllowed
-            } else {
-                updates.commentsAllowed = commentsAllowed
+        if (updates.visibility && updates.visibility !== journal.visibility) {
+            const entryUpdate = { visibility: updates.visibility }
+            if (updates.visibility === "private") {
+                entryUpdate.commentsAllowed = false
             }
 
-            if (updates.visibility && updates.visibility !== journal.visibility) {
-                const entryUpdate = { visibility: updates.visibility }
-                if (updates.visibility === "private") {
-                    entryUpdate.commentsAllowed = false
-                }
+            await Entry.updateMany(
+                {
+                    journalId: journal._id,
+                    visibility: { $nin: ENTRY_VISIBILITY_BY_JOURNAL[updates.visibility] } // Matches entries whose visibility the new journal visibility forbids.
+                },
+                { $set: entryUpdate }, // entries adopt the journal's new visibility.
+                { session }
+            )
 
+            // Comments are not allowed in Private entries
+            if (updates.visibility === "private") {
                 await Entry.updateMany(
-                    {
-                        journalId: journal._id,
-                        visibility: { $nin: ENTRY_VISIBILITY_BY_JOURNAL[updates.visibility] } // Matches entries whose visibility the new journal visibility forbids.
-                    },
-                    { $set: entryUpdate }, // entries adopt the journal's new visibility.
+                    { journalId: journal._id, commentsAllowed: true },
+                    { $set: { commentsAllowed: false } },
                     { session }
                 )
-
-                // Comments are not allowed in Private entries
-                if (updates.visibility === "private") {
-                    await Entry.updateMany(
-                        { journalId: journal._id, commentsAllowed: true },
-                        { $set: { commentsAllowed: false } },
-                        { session }
-                    )
-                }
-
-                // Nobody needs approval on a public journal, so everyone who was waiting is approved now.
-                if (updates.visibility === "public") {
-                    const approved = await Follow.updateMany(
-                        { journalId: journal._id, status: "pending" },
-                        { $set: { status: "active" } },
-                        { session }
-                    )
-                    if (approved.modifiedCount) {
-                        journal.$inc("followerCount", approved.modifiedCount) // Only active followers are counted.
-                    }
-                }
-
             }
 
-            Object.assign(journal, updates) // Copy only the fields the client sent
+            // Nobody needs approval on a public journal, so everyone who was waiting is approved now.
+            if (updates.visibility === "public") {
+                const approved = await Follow.updateMany(
+                    { journalId: journal._id, status: "pending" },
+                    { $set: { status: "active" } },
+                    { session }
+                )
+                if (approved.modifiedCount) {
+                    journal.$inc("followerCount", approved.modifiedCount) // Only active followers are counted.
+                }
+            }
 
-            if (chapters) applyChapterList(journal, chapters) // A bad list aborts the transaction, including the entry rewrite above.
+        }
 
-            updatedJournal = await journal.save({ session }) // Returns the saved document, which is sent back to the client.
-        })
-    } finally {
-        await session.endSession()
-    }
+        Object.assign(journal, updates) // Copy only the fields the client sent
+
+        if (chapters) applyChapterList(journal, chapters) // A bad list aborts the transaction, including the entry rewrite above.
+
+        return journal.save({ session }) // Returns the saved document, which is sent back to the client.
+    })
 
     // After commit. A failed update throws before this line, so a rejected patch does not call the summary API.
     // Waits for the new summary so the response has it. If the summary fails, data keeps the old aiSummary.
@@ -296,26 +304,20 @@ const updateJournal = async (req, res) => {
 
 // For DELETE "/api/journals/:jid"
 const deleteJournal = async (req, res) => {
-    const session = await mongoose.startSession()
+    await runInTransaction(async session => {
+        const entries = await Entry.find({ journalId: req.journal._id }, { _id: 1 }, { session }).lean() // We only need the ids
+        const entryIds = entries.map(entry => entry._id)
 
-    try {
-        await session.withTransaction(async () => {
-            const entries = await Entry.find({ journalId: req.journal._id }, { _id: 1 }, { session }).lean() // We only need the ids
-            const entryIds = entries.map(entry => entry._id)
+        // Full Cleanup, one operation at a time. A transaction does not support parallel operations on its session.
+        await Like.deleteMany({ entryId: { $in: entryIds } }, { session })
+        await Bookmark.deleteMany({ entryId: { $in: entryIds } }, { session })
+        await Comment.deleteMany({ journalId: req.journal._id }, { session })
+        await Follow.deleteMany({ journalId: req.journal._id }, { session })
+        await Entry.deleteMany({ journalId: req.journal._id }, { session })
 
-            // Full Cleanup, one operation at a time. A transaction does not support parallel operations on its session.
-            await Like.deleteMany({ entryId: { $in: entryIds } }, { session })
-            await Bookmark.deleteMany({ entryId: { $in: entryIds } }, { session })
-            await Comment.deleteMany({ journalId: req.journal._id }, { session })
-            await Follow.deleteMany({ journalId: req.journal._id }, { session })
-            await Entry.deleteMany({ journalId: req.journal._id }, { session })
-
-            const deleted = await Journal.deleteOne({ _id: req.journal._id, authorId: req.userObj._id }, { session })
-            if (!deleted.deletedCount) throw httpError(404, "Journal does not exist")
-        })
-    } finally {
-        await session.endSession()
-    }
+        const deleted = await Journal.deleteOne({ _id: req.journal._id, authorId: req.userObj._id }, { session })
+        if (!deleted.deletedCount) throw httpError(404, "Journal does not exist")
+    })
 
     res.status(200).json({ message: "Journal and all associated data deleted successfully" })
 }
@@ -328,5 +330,3 @@ module.exports = {
     updateJournal,
     deleteJournal
 }
-
-

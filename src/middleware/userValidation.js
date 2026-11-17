@@ -1,6 +1,6 @@
 const validator = require("validator")
 const { ALLOWED_UPDATES, USER_ABOUT_MAX, USER_DESCRIPTION_MAX, AGE_MIN, GENDERS } = require("../utils/constant")
-const { fail, isPlainObject } = require("../validation/common")
+const { isPlainObject } = require("../validation/common")
 
 const PASSWORD_RULES = { minLength: 8, minLowercase: 1, minUppercase: 1, minNumbers: 1, minSymbols: 1 }
 const NAME_FIELDS = ["firstName", "lastName"]
@@ -72,7 +72,7 @@ const validateSignup = (req, res, next) => {
         req.validatedBody = { ...profile, email, password }
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -90,7 +90,7 @@ const validateProfileUpdate = (req, res, next) => {
         req.validatedBody = updates
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -100,7 +100,7 @@ const validateLogin = (req, res, next) => {
         req.validatedBody = readCredentials(req.body)
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 

@@ -1,9 +1,6 @@
 const { normalizeId } = require("../utils/objectId")
-const { COVER_PATTERN, MAX_COVER_LENGTH, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } = require("../utils/constant")
+const { COVER_PATTERN, MAX_COVER_LENGTH, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, DEFAULT_LIST_LIMIT } = require("../utils/constant")
 const ID_LABELS = { jid: "Journal ID", eid: "Entry ID", cid: "Chapter ID", uid: "User ID", commentId: "Comment ID" }
-
-// Send respnse 400 with error message
-const fail = (res, message) => res.status(400).json({ message })
 
 // JSON object verification
 const isPlainObject = value =>
@@ -12,7 +9,7 @@ const isPlainObject = value =>
     !Array.isArray(value) &&
     Object.getPrototypeOf(value) === Object.prototype // Filters out things that are typeof "object" but not object
 
-// Error for rejected extra fields
+// Returns an error message listing the fields that are not allowed, or null when there are none
 const rejectExtraFields = (object, allowedFields) => {
     const extras = Object.keys(object).filter(key => !allowedFields.includes(key))
     return extras.length ? `Unsupported field(s): ${extras.join(", ")}` : null
@@ -63,14 +60,14 @@ const validateIds = (...idList) => {
             const normalized = normalizeId(req.params[id])
 
             // Reject request if any ID fails
-            if (!normalized) return fail(res, `Invalid ${ID_LABELS[id] || id}`)
+            if (!normalized) return res.status(400).json({ message: `Invalid ${ID_LABELS[id] || id}` })
             req.params[id] = normalized
         }
         next()
     }
 }
 
-// Pagination Query validation
+// Reads page and limit from a query. Throws an Error for a bad value, so call it inside a try/catch that sends the 400.
 const parsePagination = (query, { defaultLimit = DEFAULT_PAGE_LIMIT, maxLimit = MAX_PAGE_LIMIT } = {}) => {
     const page = query.page === undefined ? 1 : Number(query.page)
     const limit = query.limit === undefined ? defaultLimit : Number(query.limit)
@@ -81,8 +78,28 @@ const parsePagination = (query, { defaultLimit = DEFAULT_PAGE_LIMIT, maxLimit = 
     return { page, limit, skip: (page - 1) * limit }
 }
 
+// Middleware for list routes: only the allowed query fields, optional enum checks, then page and limit into req.pagination.
+// enums is { field: [allowedValues, message] }. A field that was not sent is not checked.
+const validateListQuery = ({ allowed, enums = {}, defaultLimit }) => (req, res, next) => {
+    try {
+        const unknown = rejectExtraFields(req.query, allowed)
+        if (unknown) throw new Error(unknown)
+
+        for (const [field, [values, message]] of Object.entries(enums)) {
+            if (req.query[field] !== undefined && !values.includes(req.query[field])) throw new Error(message)
+        }
+
+        req.pagination = parsePagination(req.query, { defaultLimit })
+        next()
+    } catch (error) {
+        return res.status(400).json({ message: error.message })
+    }
+}
+
+// Only page and limit. For entry lists and reply lists.
+const validatePageQuery = validateListQuery({ allowed: ["page", "limit"], defaultLimit: DEFAULT_LIST_LIMIT })
+
 module.exports = {
-    fail,
     isPlainObject,
     rejectExtraFields,
     cleanString,
@@ -90,6 +107,7 @@ module.exports = {
     validateNumber,
     validateCover,
     validateIds,
-    parsePagination
+    parsePagination,
+    validateListQuery,
+    validatePageQuery
 }
-

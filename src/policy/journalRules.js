@@ -3,7 +3,7 @@ const { ENTRY_VISIBILITY_BY_JOURNAL } = require("../utils/constant")
 const { httpError } = require("../utils/httpError")
 
 // Decides the visibility stored on a new or edited entry.
-// Used by entryController
+// Call it inside the entry transaction. A visibility the journal does not allow throws httpError, which rolls that transaction back.
 const entryVisibilityForJournal = (journalVisibility, requestedVisibility) => {
     const allowed = ENTRY_VISIBILITY_BY_JOURNAL[journalVisibility] || ["private"] // Unknown journal visibility falls closed to private entries only.
     if (requestedVisibility === undefined) return journalVisibility // Omitting the field means "match the journal visibility"
@@ -15,8 +15,9 @@ const entryVisibilityForJournal = (journalVisibility, requestedVisibility) => {
     return requestedVisibility
 }
 
-// Private journals and entries cannot accept comments. A true value is rejected. Private always stores false.
+// Private journals and entries cannot accept comments. A true value throws httpError. Private always stores false.
 // Any other visibility keeps the value the client sent, including undefined when the field was omitted.
+// Call it inside a transaction. Outside one (createJournal), check the private and true case first and send the 400 directly.
 const commentsAllowedForVisibility = (visibility, commentsAllowed) => {
     if (visibility !== "private") return commentsAllowed
 
@@ -35,4 +36,3 @@ const commentsClosedMessage = (journal, entry) => {
 }
 
 module.exports = { entryVisibilityForJournal, commentsAllowedForVisibility, commentsClosedMessage }
-

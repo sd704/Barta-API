@@ -1,6 +1,6 @@
 const express = require("express")
 const { tokenAuth } = require("../middleware/tokenAuth")
-const { validateIds } = require("../middleware/journalValidation")
+const { validateIds } = require("../validation/common")
 const { validateNoFields, validateLibraryJournalsQuery, validateLibraryBookmarksQuery, validateFollowerQuery, validateFollowDecision } = require("../middleware/engagementValidation")
 const { loadJournal, requireJournalAuthor, rejectJournalAuthor, resolveJournalAccess, requireEntriesAccess, loadEntryJournal, requireEntryReadAccess } = require("../middleware/journalAccess")
 const { followJournal, unfollowJournal, getFollowers, reviewFollower } = require("../controller/followController")

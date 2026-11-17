@@ -1,10 +1,10 @@
-const mongoose = require("mongoose")
 const { Journal } = require("../model/journal")
 const { Follow } = require("../model/follow")
 const { User } = require("../model/user")
 const { Subscription } = require("../model/subscription")
 const { BlockList } = require("../model/blocklist")
 const { httpError } = require("../utils/httpError")
+const { runInTransaction } = require("../utils/transaction")
 const { paginatedResponse } = require("../utils/apiResponse")
 const { PUBLIC_PROFILE_FIELDS } = require("../utils/constant")
 const { displayName } = require("../utils/publicProfile")
@@ -17,16 +17,15 @@ const followJournal = async (req, res) => {
     const followerId = req.userObj._id
     const journalId = req.journal._id
 
-    const session = await mongoose.startSession()
     let result
 
     try {
-        await session.withTransaction(async () => {
+        result = await runInTransaction(async session => {
             const journal = await Journal.findById(journalId).session(session)
             if (!journal) throw httpError(404, "Journal does not exist")
 
             const relationships = await loadRelationships(followerId, [journal.authorId], session)
-            const discoveryError = journalDiscoveryError(journal, followerId, relationships) // Checks if Journal Author made this request 
+            const discoveryError = journalDiscoveryError(journal, followerId, relationships) // Checks if Journal Author made this request
             if (discoveryError) throw httpError(discoveryError.statusCode, discoveryError.message)
 
             if (journal.visibility === "subscribed") {
@@ -43,7 +42,7 @@ const followJournal = async (req, res) => {
                 await incrementFollowerCount(journalId, session)
             }
 
-            result = { status, title: journal.title }
+            return { status, title: journal.title }
         })
     } catch (error) {
 
@@ -66,8 +65,6 @@ const followJournal = async (req, res) => {
         }
 
         throw error
-    } finally {
-        await session.endSession()
     }
 
     const message = result.status === "active"
@@ -89,30 +86,23 @@ const unfollowJournal = async (req, res) => {
     const followerId = req.userObj._id
     const journalId = req.journal._id
 
-    const session = await mongoose.startSession()
-    let result
+    const result = await runInTransaction(async session => {
+        const journal = await Journal.findById(journalId).session(session)
+        if (!journal) throw httpError(404, "Journal does not exist")
+        if (journal.authorId.equals(followerId)) throw httpError(403, "You cannot unfollow your own journal")
 
-    try {
-        await session.withTransaction(async () => {
-            const journal = await Journal.findById(journalId).session(session)
-            if (!journal) throw httpError(404, "Journal does not exist")
-            if (journal.authorId.equals(followerId)) throw httpError(403, "You cannot unfollow your own journal")
+        const deleted = await Follow.findOneAndDelete({ followerId, journalId }, { session })
+        if (!deleted) throw httpError(404, "You are not following this journal")
 
-            const deleted = await Follow.findOneAndDelete({ followerId, journalId }, { session })
-            if (!deleted) throw httpError(404, "You are not following this journal")
+        if (deleted.status === "active") {
+            await decrementFollowerCount(journalId, session)
+        }
 
-            if (deleted.status === "active") {
-                await decrementFollowerCount(journalId, session)
-            }
+        const relationships = await loadRelationships(followerId, [journal.authorId], session)
+        const revealTitle = !journalDiscoveryError(journal, followerId, relationships)
 
-            const relationships = await loadRelationships(followerId, [journal.authorId], session)
-            const revealTitle = !journalDiscoveryError(journal, followerId, relationships)
-
-            result = { revealTitle, title: journal.title, previousStatus: deleted.status }
-        })
-    } finally {
-        await session.endSession()
-    }
+        return { revealTitle, title: journal.title, previousStatus: deleted.status }
+    })
 
     const target = result.revealTitle ? ` '${result.title}'` : ""
     const message = (result.previousStatus === "pending")
@@ -191,72 +181,62 @@ const reviewFollower = async (req, res) => {
         return res.status(404).json({ message: "No follow request exists for this user" })
     }
 
-    const session = await mongoose.startSession()
-    let result
+    const result = await runInTransaction(async session => {
+        const journal = await Journal.findOne({ _id: journalId, authorId: req.userObj._id }).session(session)
+        if (!journal) throw httpError(404, "Journal does not exist")
 
-    try {
-        await session.withTransaction(async () => {
-            const journal = await Journal.findOne({ _id: journalId, authorId: req.userObj._id }).session(session)
-            if (!journal) throw httpError(404, "Journal does not exist")
+        // Approve Follower
+        if (decision === "active") {
+            const follower = await User.findById(followerId).select(PUBLIC_PROFILE_FIELDS).session(session)
 
-            // Approve Follower
-            if (decision === "active") {
-                const follower = await User.findById(followerId).select(PUBLIC_PROFILE_FIELDS).session(session)
+            // The user document is gone. Remove the orphaned follow and commit that cleanup.
+            // A throw here would roll the delete back, so the 404 is sent after the transaction.
+            if (!follower) {
+                const removed = await Follow.findOneAndDelete({ journalId, followerId }, { session })
 
-                // The user document is gone. Remove the orphaned follow and commit that cleanup.
-                // A throw here would roll the delete back, so the 404 is sent after the transaction.
-                if (!follower) {
-                    const removed = await Follow.findOneAndDelete({ journalId, followerId }, { session })
-
-                    if (removed?.status === "active") {
-                        await decrementFollowerCount(journalId, session)
-                    }
-
-                    // throw httpError(404, "This user no longer exists, so the follow record was removed")
-                    result = { action: "missingUser", removed: Boolean(removed) }
-                    return
+                if (removed?.status === "active") {
+                    await decrementFollowerCount(journalId, session)
                 }
 
-                const updated = await Follow.findOneAndUpdate(
-                    { journalId, followerId, status: "pending" },
-                    { $set: { status: "active" } },
-                    { returnDocument: "after", runValidators: true, session }
-                )
+                return { action: "missingUser", removed: Boolean(removed) }
+            }
 
-                // Update Failed
-                if (!updated) {
-                    // Find out why it did not match: already active, or missing.
-                    const existing = await Follow.findOne({ journalId, followerId }).session(session)
-                    if (existing?.status === "active") {
-                        throw httpError(409, `${displayName(follower)} is already an approved follower`)
-                    }
-                    throw httpError(404, "No follow request exists for this user")
+            const updated = await Follow.findOneAndUpdate(
+                { journalId, followerId, status: "pending" },
+                { $set: { status: "active" } },
+                { returnDocument: "after", runValidators: true, session }
+            )
+
+            // Update Failed
+            if (!updated) {
+                // Find out why it did not match: already active, or missing.
+                const existing = await Follow.findOne({ journalId, followerId }).session(session)
+                if (existing?.status === "active") {
+                    throw httpError(409, `${displayName(follower)} is already an approved follower`)
                 }
-
-                await incrementFollowerCount(journalId, session) // Count the newly approved follower +1
-                result = { action: "approved", name: displayName(follower), title: journal.title }
-                return
+                throw httpError(404, "No follow request exists for this user")
             }
 
-            // "rejected" is not stored. It deletes the row, whether it was pending or active.
-            // A deleted user populates as null, and displayName falls back to "This user".
-            const deleted = await Follow.findOneAndDelete({ journalId, followerId }, { session }).populate("followerId", PUBLIC_PROFILE_FIELDS)
+            await incrementFollowerCount(journalId, session) // Count the newly approved follower +1
+            return { action: "approved", name: displayName(follower), title: journal.title }
+        }
 
-            if (!deleted) throw httpError(404, "No follow request exists for this user")
+        // "rejected" is not stored. It deletes the row, whether it was pending or active.
+        // A deleted user populates as null, and displayName falls back to "This user".
+        const deleted = await Follow.findOneAndDelete({ journalId, followerId }, { session }).populate("followerId", PUBLIC_PROFILE_FIELDS)
 
-            if (deleted.status === "active") {
-                await decrementFollowerCount(journalId, session)
-            }
+        if (!deleted) throw httpError(404, "No follow request exists for this user")
 
-            result = {
-                action: deleted.status === "active" ? "removed" : "rejected", // Removing an approved follower is different from declining a request.
-                name: displayName(deleted.followerId),
-                title: journal.title
-            }
-        })
-    } finally {
-        await session.endSession()
-    }
+        if (deleted.status === "active") {
+            await decrementFollowerCount(journalId, session)
+        }
+
+        return {
+            action: deleted.status === "active" ? "removed" : "rejected", // Removing an approved follower is different from declining a request.
+            name: displayName(deleted.followerId),
+            title: journal.title
+        }
+    })
 
 
     if (result.action === "missingUser") {
@@ -282,4 +262,3 @@ module.exports = {
     getFollowers,
     reviewFollower
 }
-

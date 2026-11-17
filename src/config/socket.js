@@ -11,6 +11,7 @@ const { CHAT_USER_FIELDS, MESSAGE_TEXT_MAX } = require("../utils/constant")
 const { visibleChatUser } = require("../utils/publicProfile")
 const { participantKey } = require("../utils/participantKey")
 const { normalizeId } = require("../utils/objectId")
+const { loadRelationships } = require("../services/journalReaderContext")
 
 // Simple Map of online user IDs and count no. of logged in devices
 const onlineUsers = new Map() // [ {uid, count} ]
@@ -95,21 +96,13 @@ const initializeSocket = (server) => {
                 const userIds = requestedIds.slice(0, PRESENCE_SUBSCRIBE_MAX).map(normalizeId).filter(Boolean)
                 if (!userIds.length) return
 
-                // We don't let blocked users know online status
-                const participantKeys = userIds.map(targetId => participantKey(loggedInUserId, targetId))
+                // Only accepted friends see online status. A block in either direction hides it.
+                const { blocked, friends } = await loadRelationships(loggedInUserId, userIds)
 
-                const [cList, bList] = await Promise.all([
-                    Connection.find({ participants: { $in: participantKeys }, status: "accepted" }).lean(),
-                    BlockList.find({ participants: { $in: participantKeys } }).lean()
-                ])
+                for (const userId of userIds) {
+                    const key = participantKey(loggedInUserId, userId)
 
-                const connectedSet = new Set(cList.map(c => c.participants)) // set of participantKeys where accepted
-                const blockedSet = new Set(bList.map(block => block.participants)) // set of participantKeys where blocked
-
-                for (const [index, userId] of userIds.entries()) {
-                    const key = participantKeys[index]
-
-                    if (!blockedSet.has(key) && connectedSet.has(key)) {
+                    if (!blocked.has(key) && friends.has(key)) {
                         socket.join(`presence:${userId}`)
                         const userLastSeen = await User.findById(userId).select("lastSeen").lean()
                         const count = onlineUsers.get(userId) || 0

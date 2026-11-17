@@ -4,6 +4,7 @@ const { Entry } = require("../model/entry")
 const { BlockList } = require("../model/blocklist")
 const { commentsClosedMessage } = require("../policy/journalRules")
 const { commentScopeError } = require("../policy/journalAccessPolicy")
+const { loadEntryWithJournal } = require("../services/entryLoader")
 const { participantKey } = require("../utils/participantKey")
 
 // Check is comment allowed on Journal/Entry
@@ -41,10 +42,8 @@ const loadCommentParent = async (req, res, next) => {
 
     // For Entry comment
     if (entryId) {
-        const entry = await Entry.findById(entryId)
+        const { entry, journal } = await loadEntryWithJournal(entryId)
         if (!entry) return res.status(404).json({ message: "Entry does not exist" })
-
-        const journal = await Journal.findById(entry.journalId)
         if (!journal) return res.status(404).json({ message: "Journal does not exist" })
 
         req.entry = entry
@@ -68,11 +67,11 @@ const requireScopedCommentAccess = (req, res, next) => {
     next()
 }
 
-// Check comment visibility
+// Check comment visibility. Must run after resolveJournalAccess.
 const requireVisibleComment = async (req, res, next) => {
 
     // Comment is always visible to author
-    if (req.journal.authorId.equals(req.userObj._id)) return next()
+    if (req.journalAccess.isAuthor) return next()
 
     // Return 404 for regular users if hidden
     if (req.comment.isHidden) return res.status(404).json({ message: "Comment does not exist" })

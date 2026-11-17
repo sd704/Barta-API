@@ -19,9 +19,14 @@ const errorHandler = (err, req, res, next) => {
         return res.status(413).json({ message: "Request body is too large" })
     }
 
-    // httpError from controllers, and other client errors that carry a status. 5xx messages are not sent to the client.
+    // httpError thrown inside a transaction. 5xx messages are not sent to the client.
     if (err.statusCode && err.statusCode < 500) {
         return res.status(err.statusCode).json({ message: err.message })
+    }
+
+    // jwt.verify in tokenAuth: a token that is malformed, signed with another key, or expired.
+    if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Invalid Token!" })
     }
 
     if (err.name === "ValidationError") {

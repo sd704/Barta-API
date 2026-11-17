@@ -1,7 +1,9 @@
 const express = require("express")
 const { tokenAuth } = require("../middleware/tokenAuth")
-const { requireUserExists } = require("../middleware/userIdValidation")
-const { validateIds, validateJournalQuery, validateCreateJournal, validateUpdateJournal } = require("../middleware/journalValidation")
+const { userIdFormat, requireUserExists } = require("../middleware/userIdValidation")
+const { validateIds } = require("../validation/common")
+const { validateJournalQuery } = require("../middleware/journalQueryValidation")
+const { validateCreateJournal, validateUpdateJournal } = require("../middleware/journalBodyValidation")
 const { loadJournal, requireJournalAuthor, resolveJournalAccess } = require("../middleware/journalAccess")
 const { getOwnJournals, getUserJournals, getJournal, createJournal, updateJournal, deleteJournal } = require("../controller/journalController")
 const { getChapters, deleteChapter } = require("../controller/chapterController")
@@ -11,7 +13,7 @@ journalRouter.get("/api/journals",
     tokenAuth, validateJournalQuery, getOwnJournals)
 
 journalRouter.get("/api/users/:uid/journals",
-    tokenAuth, validateIds("uid"), validateJournalQuery, requireUserExists, getUserJournals)
+    tokenAuth, userIdFormat, validateJournalQuery, requireUserExists, getUserJournals)
 
 journalRouter.post("/api/journals",
     tokenAuth, validateCreateJournal, createJournal)

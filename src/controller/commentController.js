@@ -1,10 +1,10 @@
-const mongoose = require("mongoose")
 const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { incrementCommentCount, decrementCommentCount } = require("../services/commentCounter")
 const { Comment } = require("../model/comment")
 const { BlockList } = require("../model/blocklist")
 const { httpError } = require("../utils/httpError")
+const { runInTransaction } = require("../utils/transaction")
 const { loadReaderContextForJournal, blockedUserIds } = require("../services/journalReaderContext")
 const { entryInteractionError, fullJournalAccessError } = require("../policy/journalAccessPolicy")
 const { commentsClosedMessage } = require("../policy/journalRules")
@@ -73,7 +73,7 @@ const commentFilter = (req) => ({
 
 // GET journal comments and GET entry comments. Both routers call this.
 const listComments = async (req, res) => {
-    const isAuthor = req.journal.authorId.equals(req.userObj._id)
+    const { isAuthor } = req.journalAccess
     const { page, limit, skip } = req.pagination
 
     // DB: BlockList lookup for readers only. The author moderates every comment, so the query is skipped.
@@ -134,7 +134,7 @@ const listComments = async (req, res) => {
 
 // GET specific journal comment or entry comment. requireVisibleComment already ran for non-authors.
 const getComment = async (req, res) => {
-    const isAuthor = req.journal.authorId.equals(req.userObj._id)
+    const { isAuthor } = req.journalAccess
     const comment = req.comment
     let hiddenByParent = false
 
@@ -155,7 +155,7 @@ const getComment = async (req, res) => {
 
     // Check existing reply count. If its a reply, the count is undefined
     const [, replyCount] = await Promise.all([
-        comment.populate(AUTHOR_POPULATE), // Populate comment with commenter data       
+        comment.populate(AUTHOR_POPULATE), // Populate comment with commenter data      
         comment.parentId ? Promise.resolve(undefined) : Comment.countDocuments(replyQuery)
     ])
 
@@ -171,35 +171,26 @@ const getComment = async (req, res) => {
 
 // POST a top-level journal or entry comment. parentId is always null. Replies use createReply.
 const createComment = async (req, res) => {
-    const session = await mongoose.startSession()
-    let createdComment
+    const createdComment = await runInTransaction(async session => {
+        const { entry } = await assertWritableContext(req, session)
 
-    try {
-        // DB: withTransaction — commit on success, roll back on throw, and retry on transient transaction errors.
-        await session.withTransaction(async () => {
-            const { entry } = await assertWritableContext(req, session)
+        const [comment] = await Comment.create([{
+            journalId: req.journal._id,
+            entryId: entry ? entry._id : null,
+            parentId: null,
+            userId: req.userObj._id,
+            text: req.validatedBody.text
+        }], { session })
 
-            const result = await Comment.create([{
-                journalId: req.journal._id,
-                entryId: entry ? entry._id : null,
-                parentId: null,
-                userId: req.userObj._id,
-                text: req.validatedBody.text
-            }], { session })
-
-            createdComment = result[0]
-
-            // An entry comment increments the entry. A journal comment increments the journal.
-            await incrementCommentCount({ journalId: req.journal._id, entryId: entry ? entry._id : null }, session)
-        })
-    } finally {
-        await session.endSession()
-    }
+        // An entry comment increments the entry. A journal comment increments the journal.
+        await incrementCommentCount({ journalId: req.journal._id, entryId: entry ? entry._id : null }, session)
+        return comment
+    })
 
     res.status(201).json({
         message: "Your comment was added",
         data: formatComment(createdComment, publicProfile(req.userObj), {
-            includeModeration: req.journal.authorId.equals(req.userObj._id),
+            includeModeration: req.journalAccess.isAuthor,
             replyCount: 0
         })
     })
@@ -207,44 +198,35 @@ const createComment = async (req, res) => {
 
 // POST a reply. The parent must be top-level.
 const createReply = async (req, res) => {
-    const session = await mongoose.startSession()
-    let createdComment
+    const createdComment = await runInTransaction(async session => {
+        await assertWritableContext(req, session)
 
-    try {
-        await session.withTransaction(async () => {
-            await assertWritableContext(req, session)
+        const parent = await Comment.findById(req.comment._id).session(session)
+        if (!parent) throw httpError(404, "Comment does not exist")
+        if (parent.parentId) throw httpError(400, "Replies can only be added to the original comment") // Depth stays at two.
+        if (parent.isHidden) throw httpError(404, "Comment does not exist") // No new replies while the parent is hidden. The author sees the same 404.
 
-            const parent = await Comment.findById(req.comment._id).session(session)
-            if (!parent) throw httpError(404, "Comment does not exist")
-            if (parent.parentId) throw httpError(400, "Replies can only be added to the original comment") // Depth stays at two.
-            if (parent.isHidden) throw httpError(404, "Comment does not exist") // No new replies while the parent is hidden. The author sees the same 404.
+        if (!req.journalAccess.isAuthor) {
+            const blocked = await BlockList.exists({ participants: participantKey(req.userObj._id, parent.userId) }).session(session)
+            if (blocked) throw httpError(404, "Comment does not exist")
+        }
 
-            const isAuthor = req.journal.authorId.equals(req.userObj._id)
-            if (!isAuthor) {
-                const blocked = await BlockList.exists({ participants: participantKey(req.userObj._id, parent.userId) }).session(session)
-                if (blocked) throw httpError(404, "Comment does not exist")
-            }
+        const [comment] = await Comment.create([{
+            journalId: parent.journalId,
+            entryId: parent.entryId,
+            parentId: parent._id,
+            userId: req.userObj._id,
+            text: req.validatedBody.text
+        }], { session })
 
-            const result = await Comment.create([{
-                journalId: parent.journalId,
-                entryId: parent.entryId,
-                parentId: parent._id,
-                userId: req.userObj._id,
-                text: req.validatedBody.text
-            }], { session })
-
-            createdComment = result[0]
-
-            // A reply follows its parent: an entry reply increments the entry, a journal reply increments the journal.
-            await incrementCommentCount({ journalId: parent.journalId, entryId: parent.entryId }, session)
-        })
-    } finally {
-        await session.endSession()
-    }
+        // A reply follows its parent: an entry reply increments the entry, a journal reply increments the journal.
+        await incrementCommentCount({ journalId: parent.journalId, entryId: parent.entryId }, session)
+        return comment
+    })
 
     res.status(201).json({
         message: "Your reply was added",
-        data: formatComment(createdComment, publicProfile(req.userObj), { includeModeration: req.journal.authorId.equals(req.userObj._id) })
+        data: formatComment(createdComment, publicProfile(req.userObj), { includeModeration: req.journalAccess.isAuthor })
     })
 }
 
@@ -278,7 +260,7 @@ const loadCommentForChange = async (req, session) => {
         comment,
         closedMessage: commentsClosedMessage(context.journal, context.entry),
         parentHidden: Boolean(parent?.isHidden),
-        isAuthor: req.journal.authorId.equals(req.userObj._id),
+        isAuthor: req.journalAccess.isAuthor,
         isCommenter: comment.userId.equals(req.userObj._id),
         concealed: comment.isHidden || Boolean(parent?.isHidden)
     }
@@ -286,60 +268,46 @@ const loadCommentForChange = async (req, session) => {
 
 // PATCH Comment text for the person who wrote the comment. The journal author uses the hide route for visibility.
 const updateComment = async (req, res) => {
-    const session = await mongoose.startSession()
-    let result
+    const comment = await runInTransaction(async session => {
+        const { comment, isAuthor, isCommenter, concealed, closedMessage } = await loadCommentForChange(req, session)
 
-    try {
-        await session.withTransaction(async () => {
-            const { comment, isAuthor, isCommenter, concealed, closedMessage } = await loadCommentForChange(req, session)
+        // A hidden comment does not exist for anyone except the journal author, including the person who wrote it.
+        if (concealed && !isAuthor) throw httpError(404, "Comment does not exist")
+        if (closedMessage) throw httpError(403, closedMessage) // Comments turned off reject the edit for the commenter and the journal author.
+        if (!isCommenter) throw httpError(403, "You can only edit your own comment")
 
-            // A hidden comment does not exist for anyone except the journal author, including the person who wrote it.
-            if (concealed && !isAuthor) throw httpError(404, "Comment does not exist")
-            if (closedMessage) throw httpError(403, closedMessage) // Comments turned off reject the edit for the commenter and the journal author.
-            if (!isCommenter) throw httpError(403, "You can only edit your own comment")
+        if (req.validatedBody.text === comment.text) throw httpError(400, "No changes were made to this comment")
 
-            if (req.validatedBody.text === comment.text) throw httpError(400, "No changes were made to this comment")
+        comment.text = req.validatedBody.text
+        await comment.save({ session })
+        return comment
+    })
 
-            comment.text = req.validatedBody.text
-            await comment.save({ session })
-            result = { comment, message: "Your comment was updated" }
-        })
-    } finally {
-        await session.endSession()
-    }
-
-    await result.comment.populate(AUTHOR_POPULATE)
+    await comment.populate(AUTHOR_POPULATE)
 
     res.status(200).json({
-        message: result.message,
-        data: formatComment(result.comment, commentAuthor(result.comment.author), { includeModeration: req.journal.authorId.equals(req.userObj._id) })
+        message: "Your comment was updated",
+        data: formatComment(comment, commentAuthor(comment.author), { includeModeration: req.journalAccess.isAuthor })
     })
 }
 
-// PATCH Comment visibility for the journal author only. The commenter cannot change visibility, unless they are also the journal author. 
+// PATCH Comment visibility for the journal author only. The commenter cannot change visibility, unless they are also the journal author.
 // Hiding a parent does not rewrite its replies.
 const hideComment = async (req, res) => {
-    const session = await mongoose.startSession()
-    let result
+    const result = await runInTransaction(async session => {
+        const { comment, parentHidden, isAuthor, concealed } = await loadCommentForChange(req, session)
 
-    try {
-        await session.withTransaction(async () => {
-            const { comment, parentHidden, isAuthor, concealed } = await loadCommentForChange(req, session)
+        // A hidden comment does not exist for anyone except the journal author, including the person who wrote it.
+        if (concealed && !isAuthor) throw httpError(404, "Comment does not exist")
+        if (!isAuthor) throw httpError(403, "Only the journal author can change comment visibility")
 
-            // A hidden comment does not exist for anyone except the journal author, including the person who wrote it.
-            if (concealed && !isAuthor) throw httpError(404, "Comment does not exist")
-            if (!isAuthor) throw httpError(403, "Only the journal author can change comment visibility")
+        if (req.validatedBody.isHidden === comment.isHidden) throw httpError(400, "No changes were made to this comment")
 
-            if (req.validatedBody.isHidden === comment.isHidden) throw httpError(400, "No changes were made to this comment")
+        comment.isHidden = req.validatedBody.isHidden
+        await comment.save({ session })
 
-            comment.isHidden = req.validatedBody.isHidden
-            await comment.save({ session })
-
-            result = { comment, message: hideMessage({ nextHidden: comment.isHidden, parentHidden }) }
-        })
-    } finally {
-        await session.endSession()
-    }
+        return { comment, message: hideMessage({ nextHidden: comment.isHidden, parentHidden }) }
+    })
 
     await result.comment.populate(AUTHOR_POPULATE)
 
@@ -351,31 +319,24 @@ const hideComment = async (req, res) => {
 
 // DELETE Comment for the commenter. A top-level delete also deletes replies and subtracts every deleted row from entry.commentCount.
 const deleteComment = async (req, res) => {
-    const session = await mongoose.startSession()
-    let result
+    const result = await runInTransaction(async session => {
+        await assertReadableContext(req, session)
 
-    try {
-        await session.withTransaction(async () => {
-            await assertReadableContext(req, session)
+        const comment = await Comment.findOne({ _id: req.comment._id, userId: req.userObj._id }).session(session)
 
-            const comment = await Comment.findOne({ _id: req.comment._id, userId: req.userObj._id }).session(session)
+        if (!comment) throw httpError(403, "Only the comment author can delete this comment.")
 
-            if (!comment) throw httpError(403, "Only the comment author can delete this comment.")
+        // Delete where id == comment._id or id == parent._id
+        const deleted = await Comment.deleteMany({ $or: [{ _id: comment._id }, { parentId: comment._id }] }, { session })
 
-            // Delete where id == comment._id or id == parent._id
-            const deleted = await Comment.deleteMany({ $or: [{ _id: comment._id }, { parentId: comment._id }] }, { session })
+        await decrementCommentCount(
+            { journalId: comment.journalId, entryId: comment.entryId },
+            deleted.deletedCount,
+            session
+        )
 
-            await decrementCommentCount(
-                { journalId: comment.journalId, entryId: comment.entryId },
-                deleted.deletedCount,
-                session
-            )
-
-            result = { deletedCount: deleted.deletedCount, isReply: Boolean(comment.parentId) }
-        })
-    } finally {
-        await session.endSession()
-    }
+        return { deletedCount: deleted.deletedCount, isReply: Boolean(comment.parentId) }
+    })
 
     const message = result.deletedCount > 1
         ? "Your comment and its replies were deleted"
@@ -390,7 +351,7 @@ const listReplies = async (req, res) => {
         return res.status(400).json({ message: "This comment is a reply and does not have its own reply thread" })
     }
 
-    const isAuthor = req.journal.authorId.equals(req.userObj._id)
+    const { isAuthor } = req.journalAccess
     const { page, limit, skip } = req.pagination
     const blockedIds = isAuthor ? [] : await blockedUserIds(req.userObj._id) // DB: blocks involving this reader. Skipped for the author.
     const query = { parentId: req.comment._id } // Replies of this comment. parentId is enough to find them.
@@ -431,4 +392,5 @@ module.exports = {
     listReplies,
     createReply
 }
+
 

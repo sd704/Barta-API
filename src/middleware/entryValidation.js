@@ -1,25 +1,13 @@
 const { normalizeId } = require("../utils/objectId")
 const { VISIBILITIES, ENTRY_TYPES, CHAPTER_TITLE_MAX, ENTRY_TITLE_MAX, ENTRY_PREVIEW_MAX, ENTRY_BODY_MAX, ENTRY_MOOD_MAX,
-    TAG_MAX_LENGTH, MAX_TAGS, PROGRESS_MIN, PROGRESS_MAX, DEFAULT_LIST_LIMIT } = require("../utils/constant")
-const { fail, isPlainObject, rejectExtraFields, cleanString, validateBoolean, validateNumber, validateCover, parsePagination } = require("../validation/common")
+    TAG_MAX_LENGTH, MAX_TAGS, PROGRESS_MIN, PROGRESS_MAX } = require("../utils/constant")
+const { isPlainObject, rejectExtraFields, cleanString, validateBoolean, validateNumber, validateCover } = require("../validation/common")
 
 // Entry POST body, "progress" is saved in Journal
 const CREATE_FIELDS = ["chapterId", "newChapter", "type", "title", "preview", "body", "cover", "mood", "tags", "visibility", "commentsAllowed", "progress"]
 
 // Entry PATCH body
 const UPDATE_FIELDS = CREATE_FIELDS.filter(field => field !== "progress")
-
-// For GET "/api/journals/:jid/entries"
-const validateEntryQuery = (req, res, next) => {
-    try {
-        const unknown = rejectExtraFields(req.query, ["page", "limit"])
-        if (unknown) throw new Error(unknown)
-        req.pagination = parsePagination(req.query, { defaultLimit: DEFAULT_LIST_LIMIT })
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
 
 // For create/update entry
 const normalizeEntryBody = (body, creating) => {
@@ -84,11 +72,8 @@ const normalizeEntryBody = (body, creating) => {
         normalized.visibility = body.visibility
     }
 
+    // Private with comments on is rejected by commentsAllowedForVisibility in the controller, against the stored visibility too.
     validateBoolean(body.commentsAllowed, "commentsAllowed")
-
-    if (body.visibility === "private" && body.commentsAllowed === true) {
-        throw new Error("Comments are not allowed when visibility is private")
-    }
 
     if (body.commentsAllowed !== undefined) {
         normalized.commentsAllowed = body.commentsAllowed
@@ -109,7 +94,7 @@ const validateCreateEntry = (req, res, next) => {
         req.validatedBody = normalizeEntryBody(req.body, true)
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -117,16 +102,14 @@ const validateCreateEntry = (req, res, next) => {
 const validateUpdateEntry = (req, res, next) => {
     try {
         req.validatedBody = normalizeEntryBody(req.body, false)
-        if (!Object.keys(req.validatedBody).length) return fail(res, "No valid fields supplied")
+        if (!Object.keys(req.validatedBody).length) return res.status(400).json({ message: "No valid fields supplied" })
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
 module.exports = {
-    validateEntryQuery,
     validateCreateEntry,
     validateUpdateEntry
 }
-

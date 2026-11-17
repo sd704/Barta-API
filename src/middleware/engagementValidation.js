@@ -1,6 +1,6 @@
 const { normalizeId } = require("../utils/objectId")
 const { FOLLOW_STATUSES, FOLLOW_DECISIONS, JOURNAL_STATUSES, ENTRY_TYPES, DEFAULT_LIST_LIMIT, COMMENT_TEXT_MAX } = require("../utils/constant")
-const { fail, isPlainObject, rejectExtraFields, cleanString, parsePagination } = require("../validation/common")
+const { isPlainObject, rejectExtraFields, cleanString, validateListQuery } = require("../validation/common")
 
 // Check for routes that require no body. E.g.: Like, Follow, Bookmark
 const validateNoFields = (req, res, next) => {
@@ -11,61 +11,29 @@ const validateNoFields = (req, res, next) => {
     }
 
     // Body exists but its not an object
-    if (!isPlainObject(req.body)) return fail(res, "Request body must be an object")
+    if (!isPlainObject(req.body)) return res.status(400).json({ message: "Request body must be an object" })
 
     // Body is an object and has key-value pairs
-    return fail(res, `Unsupported field(s): ${Object.keys(req.body).join(", ")}`)
-}
-
-// Validate queries. Status, Page and Limit are expected queries
-const validatePagedQuery = allowedFields => (req, res, next) => {
-    try {
-        // Don't allow extra query
-        const unknown = rejectExtraFields(req.query, allowedFields)
-        if (unknown) throw new Error(unknown)
-
-        // Journal status validation
-        if (req.query.status !== undefined && !FOLLOW_STATUSES.includes(req.query.status)) {
-            throw new Error("status must be either pending or active")
-        }
-
-        req.pagination = parsePagination(req.query)
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
+    return res.status(400).json({ message: `Unsupported field(s): ${Object.keys(req.body).join(", ")}` })
 }
 
 // GET "/api/library/journals". status is the journal status, not the follow status.
-const validateLibraryJournalsQuery = (req, res, next) => {
-    try {
-        const unknown = rejectExtraFields(req.query, ["page", "limit", "status"])
-        if (unknown) throw new Error(unknown)
-        if (req.query.status !== undefined && !JOURNAL_STATUSES.includes(req.query.status)) throw new Error("Invalid journal status")
-
-        req.pagination = parsePagination(req.query)
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
+const validateLibraryJournalsQuery = validateListQuery({
+    allowed: ["page", "limit", "status"],
+    enums: { status: [JOURNAL_STATUSES, "Invalid journal status"] }
+})
 
 // GET "/api/library/bookmarks". type is the entry type.
-const validateLibraryBookmarksQuery = (req, res, next) => {
-    try {
-        const unknown = rejectExtraFields(req.query, ["page", "limit", "type"])
-        if (unknown) throw new Error(unknown)
-        if (req.query.type !== undefined && !ENTRY_TYPES.includes(req.query.type)) throw new Error("Invalid entry type")
+const validateLibraryBookmarksQuery = validateListQuery({
+    allowed: ["page", "limit", "type"],
+    enums: { type: [ENTRY_TYPES, "Invalid entry type"] }
+})
 
-        req.pagination = parsePagination(req.query)
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
-
-// For Journal follower list
-const validateFollowerQuery = validatePagedQuery(["page", "limit", "status"])
+// For Journal follower list. status is the follow status.
+const validateFollowerQuery = validateListQuery({
+    allowed: ["page", "limit", "status"],
+    enums: { status: [FOLLOW_STATUSES, "status must be either pending or active"] }
+})
 
 // For setting Follow status, validate the status in req.body
 const validateFollowDecision = (req, res, next) => {
@@ -79,7 +47,7 @@ const validateFollowDecision = (req, res, next) => {
         req.validatedBody = { status: req.body.status }
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -108,7 +76,7 @@ const validateCommentListTarget = (req, res, next) => {
         req.commentTarget = commentTarget(req.query)
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -119,75 +87,38 @@ const validateCommentTarget = (req, res, next) => {
         req.commentTarget = commentTarget(req.body)
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
-// Validate queries for Comments
-const validateCommentQuery = (req, res, next) => {
+// GET /api/comments. Page and limit, and the target id that was already accepted.
+const validateCommentListQuery = validateListQuery({
+    allowed: ["page", "limit", "journalId", "entryId"],
+    defaultLimit: DEFAULT_LIST_LIMIT
+})
+
+// Comment body is { text }. allowedFields lists any other field the route accepts, which were checked earlier.
+const validateCommentText = allowedFields => (req, res, next) => {
     try {
-        const unknown = rejectExtraFields(req.query, ["page", "limit"])
+        if (!isPlainObject(req.body)) throw new Error("Request body must be an object")
+        const unknown = rejectExtraFields(req.body, allowedFields)
         if (unknown) throw new Error(unknown)
 
-        req.pagination = parsePagination(req.query, { defaultLimit: DEFAULT_LIST_LIMIT })
+        req.validatedBody = { text: cleanString(req.body.text, "text", { required: true, max: COMMENT_TEXT_MAX }) }
         next()
     } catch (error) {
-        fail(res, error.message)
-    }
-}
-
-// GET /api/comments. Same page and limit rules, and the target id that was already accepted.
-const validateCommentListQuery = (req, res, next) => {
-    try {
-        const unknown = rejectExtraFields(req.query, ["page", "limit", "journalId", "entryId"])
-        if (unknown) throw new Error(unknown)
-
-        req.pagination = parsePagination(req.query, { defaultLimit: DEFAULT_LIST_LIMIT })
-        next()
-    } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
 // POST /api/comments. Body is { text, journalId } or { text, entryId }. The id was already checked.
-const validateNewComment = (req, res, next) => {
-    try {
-        if (!isPlainObject(req.body)) throw new Error("Request body must be an object")
-        const unknown = rejectExtraFields(req.body, ["text", "journalId", "entryId"])
-        if (unknown) throw new Error(unknown)
-        req.validatedBody = { text: cleanString(req.body.text, "text", { required: true, max: COMMENT_TEXT_MAX }) }
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
+const validateNewComment = validateCommentText(["text", "journalId", "entryId"])
 
-// Validate Comment request body = { text }
-const validateCommentCreate = (req, res, next) => {
-    try {
-        if (!isPlainObject(req.body)) throw new Error("Request body must be an object")
-        const unknown = rejectExtraFields(req.body, ["text"])
-        if (unknown) throw new Error(unknown)
-        req.validatedBody = { text: cleanString(req.body.text, "text", { required: true, max: COMMENT_TEXT_MAX }) }
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
+// POST /api/comments/:commentId/replies
+const validateCommentCreate = validateCommentText(["text"])
 
-// Validate req.body for Update Comment
-const validateCommentUpdate = (req, res, next) => {
-    try {
-        if (!isPlainObject(req.body)) throw new Error("Request body must be an object")
-        const unknown = rejectExtraFields(req.body, ["text"])
-        if (unknown) throw new Error(unknown)
-
-        req.validatedBody = { text: cleanString(req.body.text, "text", { required: true, max: COMMENT_TEXT_MAX }) }
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
+// PATCH /api/comments/:commentId
+const validateCommentUpdate = validateCommentText(["text"])
 
 // Validate req.body for Comment visibility change
 const validateCommentHide = (req, res, next) => {
@@ -200,7 +131,7 @@ const validateCommentHide = (req, res, next) => {
         req.validatedBody = { isHidden: req.body.isHidden }
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -212,12 +143,9 @@ module.exports = {
     validateFollowDecision,
     validateCommentListTarget,
     validateCommentTarget,
-    validateCommentQuery,
     validateCommentListQuery,
     validateNewComment,
     validateCommentCreate,
     validateCommentUpdate,
     validateCommentHide
 }
-
-

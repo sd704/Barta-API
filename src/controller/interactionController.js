@@ -1,9 +1,9 @@
-const mongoose = require("mongoose")
 const { Journal } = require("../model/journal")
 const { Entry } = require("../model/entry")
 const { Like } = require("../model/like")
 const { Bookmark } = require("../model/bookmark")
 const { httpError } = require("../utils/httpError")
+const { runInTransaction } = require("../utils/transaction")
 const { loadReaderContextForJournal } = require("../services/journalReaderContext")
 const { entryInteractionError } = require("../policy/journalAccessPolicy")
 const { incrementLikeCount, decrementLikeCount } = require("../services/likeCounter")
@@ -40,10 +40,8 @@ const addReaction = async (req, res, options) => {
     const userId = req.userObj._id
     const entryId = req.entry._id
 
-    const session = await mongoose.startSession()
-
     try {
-        await session.withTransaction(async () => {
+        await runInTransaction(async session => {
             await assertEntryInteraction(userId, req.journal._id, entryId, session)
             await options.Model.create([{ userId, entryId }], { session }) // Model: Like/Bookmark passed as parameter
             await options.increment(entryId, session)
@@ -51,8 +49,6 @@ const addReaction = async (req, res, options) => {
     } catch (error) {
         if (error.code === 11000) return res.status(409).json({ message: options.duplicateMessage(req.entry.title) })
         throw error
-    } finally {
-        await session.endSession()
     }
 
     const updated = await Entry.findById(entryId).select(options.countField).lean() // null if the entry was deleted right after the commit.
@@ -71,23 +67,16 @@ const removeReaction = async (req, res, options) => {
     const userId = req.userObj._id
     const entryId = req.entry._id
 
-    const session = await mongoose.startSession()
-    let title
+    const title = await runInTransaction(async session => {
+        const entry = await assertEntryInteraction(userId, req.journal._id, entryId, session)
 
-    try {
-        await session.withTransaction(async () => {
-            const entry = await assertEntryInteraction(userId, req.journal._id, entryId, session)
-            title = entry.title
+        const deleted = await options.Model.findOneAndDelete({ userId, entryId }, { session }) // Model: Like/Bookmark passed as parameter
 
-            const deleted = await options.Model.findOneAndDelete({ userId, entryId }, { session }) // Model: Like/Bookmark passed as parameter
+        if (!deleted) throw httpError(404, options.missingMessage(entry.title))
 
-            if (!deleted) throw httpError(404, options.missingMessage(title))
-
-            await options.decrement(entryId, session)
-        })
-    } finally {
-        await session.endSession()
-    }
+        await options.decrement(entryId, session)
+        return entry.title
+    })
 
     const updated = await Entry.findById(entryId).select(options.countField).lean() // null if the entry was deleted right after the commit.
 
@@ -142,4 +131,3 @@ module.exports = {
     saveEntry,
     unsaveEntry
 }
-

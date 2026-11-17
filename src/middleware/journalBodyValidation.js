@@ -1,58 +1,12 @@
-const { normalizeId } = require("../utils/objectId")
-const { VISIBILITIES, JOURNAL_STATUSES, JOURNAL_SORTS, JOURNAL_TITLE_MAX, JOURNAL_ABOUT_MAX, JOURNAL_CATEGORY_MAX, CHAPTER_TITLE_MAX, MAX_CHAPTERS, PROGRESS_MIN, PROGRESS_MAX } = require("../utils/constant")
-const { fail, isPlainObject, rejectExtraFields, cleanString, validateBoolean, validateNumber, validateCover, validateIds, parsePagination } = require("../validation/common")
+const { VISIBILITIES, JOURNAL_STATUSES, JOURNAL_TITLE_MAX, JOURNAL_ABOUT_MAX, JOURNAL_CATEGORY_MAX, CHAPTER_TITLE_MAX, MAX_CHAPTERS, PROGRESS_MIN, PROGRESS_MAX } = require("../utils/constant")
+const { isPlainObject, rejectExtraFields, cleanString, validateBoolean, validateNumber, validateCover } = require("../validation/common")
+const { normalizeChapterList } = require("./journalChapterValidation")
 
 // Fields accepted by Journal POST Body
 const CREATE_FIELDS = ["title", "about", "category", "visibility", "status", "cover", "pinned", "order", "progress", "chapters", "commentsAllowed"]
 
 // Fields accepted by Journal PATCH Body
 const UPDATE_FIELDS = ["title", "about", "category", "visibility", "status", "cover", "pinned", "order", "progress", "commentsAllowed", "chapters"]
-
-// For PATCH Journal "chapters": the full chapter list in the new order.
-// An item with cid is an existing chapter, an item without cid is a new chapter.
-const normalizeChapterList = (chapters) => {
-    if (!Array.isArray(chapters) || !chapters.length) throw new Error("chapters must be a non-empty array")
-    if (chapters.length > MAX_CHAPTERS) throw new Error(`chapters cannot contain more than ${MAX_CHAPTERS} items`)
-
-    const ids = new Set() // To detect duplicate chapters
-    return chapters.map((chapter, index) => {
-        if (!isPlainObject(chapter)) throw new Error(`chapters[${index}] must be an object`)
-        const extraFields = rejectExtraFields(chapter, ["cid", "title"])
-        if (extraFields) throw new Error(extraFields)
-
-        const title = cleanString(chapter.title, `chapters[${index}].title`, { required: true, max: CHAPTER_TITLE_MAX })
-        if (chapter.cid === undefined) return { title } // New chapter
-
-        const cid = normalizeId(chapter.cid) // Lowercase, the same form as _id.toString()
-        if (!cid) throw new Error(`Invalid chapter ID at chapters[${index}]`)
-
-        if (ids.has(cid)) throw new Error("Duplicate chapter ID")
-        ids.add(cid)
-        return { cid, title }
-    })
-}
-
-// For GET "/api/journals/:jid" and GET "/api/users/:uid/journals"
-const validateJournalQuery = (req, res, next) => {
-    try {
-        // Extra Fields not supported
-        const unknown = rejectExtraFields(req.query, ["status", "page", "limit", "sort"])
-        if (unknown) throw new Error(unknown)
-
-        // Default is "pinned" first, then "most recently updated"
-        const sort = req.query.sort || "updated"
-        if (!JOURNAL_SORTS.includes(sort)) throw new Error("Invalid sort value")
-
-        // Journal "status" validation
-        if (req.query.status && !JOURNAL_STATUSES.includes(req.query.status)) throw new Error("Invalid journal status")
-
-        req.pagination = parsePagination(req.query)
-        req.journalSort = sort
-        next()
-    } catch (error) {
-        fail(res, error.message)
-    }
-}
 
 // For POST/PATCH Journal
 // creating=true makes title and category required and accepts chapters as an array of titles.
@@ -87,19 +41,12 @@ const normalizeJournalBody = (body, creating) => {
     validateNumber(body.order, "order", 0, Number.MAX_SAFE_INTEGER)
     validateNumber(body.progress, "progress", PROGRESS_MIN, PROGRESS_MAX)
 
-    // A new journal with no visibility is private. Private cannot have comments turned on.
-    const effectiveVisibility = ((body.visibility === undefined) && creating) ? "private" : body.visibility
-    if (effectiveVisibility === "private" && body.commentsAllowed === true) {
-        throw new Error("Comments are not allowed when visibility is private")
-    }
-
+    // Private with comments on is rejected in the controller: createJournal checks it, updateJournal checks it against the stored visibility too.
     for (const field of ["pinned", "commentsAllowed", "order", "progress"]) {
         if (body[field] !== undefined) {
             normalized[field] = body[field] // Only copy fields that client actually sent
         }
     }
-
-    if (effectiveVisibility === "private") normalized.commentsAllowed = false // Overrides the schema default of true.
 
     // Chapters validation
     if (creating && body.chapters !== undefined) {
@@ -115,7 +62,6 @@ const normalizeJournalBody = (body, creating) => {
 
     if (!creating && body.chapters !== undefined) {
         normalized.chapters = normalizeChapterList(body.chapters)
-
     }
 
     return normalized
@@ -127,7 +73,7 @@ const validateCreateJournal = (req, res, next) => {
         req.validatedBody = normalizeJournalBody(req.body, true)
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
@@ -135,17 +81,14 @@ const validateCreateJournal = (req, res, next) => {
 const validateUpdateJournal = (req, res, next) => {
     try {
         req.validatedBody = normalizeJournalBody(req.body, false)
-        if (!Object.keys(req.validatedBody).length) return fail(res, "No valid fields supplied")
+        if (!Object.keys(req.validatedBody).length) return res.status(400).json({ message: "No valid fields supplied" })
         next()
     } catch (error) {
-        fail(res, error.message)
+        return res.status(400).json({ message: error.message })
     }
 }
 
 module.exports = {
-    validateIds,
-    validateJournalQuery,
     validateCreateJournal,
     validateUpdateJournal
 }
-

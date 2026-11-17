@@ -1,6 +1,6 @@
 const { User } = require("../model/user")
-const mongoose = require("mongoose")
 const { deleteAccountData } = require("../services/accountCleanup")
+const { runInTransaction } = require("../utils/transaction")
 const bcrypt = require('bcrypt')
 
 const getLoggedInUser = async (req, res, next) => {
@@ -62,16 +62,10 @@ const updateUser = async (req, res, next) => {
 // Deletes the account and everything tied to it in one transaction. Comments and Chats stay.
 const deleteUser = async (req, res, next) => {
     const deletedUser = req.userObj.filterSafeData()
-    const session = await mongoose.startSession()
-
-    try {
-        await session.withTransaction(async () => {
-            await deleteAccountData(req.userObj._id, session)
-            await req.userObj.deleteOne({ session })
-        })
-    } finally {
-        await session.endSession()
-    }
+    await runInTransaction(async session => {
+        await deleteAccountData(req.userObj._id, session)
+        await req.userObj.deleteOne({ session })
+    })
 
     res.status(200).clearCookie("token").json({ message: `User deleted successfully`, data: deletedUser })
     // res.status(200).cookie("token", null, { expires: new Date(Date.now()) }).json({ message: `User deleted successfully`, data: deletedUser })
