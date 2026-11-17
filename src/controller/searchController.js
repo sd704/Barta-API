@@ -3,6 +3,7 @@ const { BlockList } = require("../model/blocklist")
 const { Connection } = require("../model/connection")
 const { SAFE_DATA } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
+const { blockedUserCard } = require("../utils/publicProfile")
 
 const findUsersByName = async (req, res, next) => {
     const { username } = req.searchQuery
@@ -35,10 +36,9 @@ const findUserByEmail = async (req, res, next) => {
         return res.status(404).json({ message: `User with email ${email} not found!` })
     }
 
-    // BlockList Check
-    const userId = req.userObj._id
-    const searchResult = await BlockList.findOne({ senderId: result._id, receiverId: userId }).lean()
-    if (searchResult) {
+    // A block in either direction looks the same as a missing email.
+    const blocked = await BlockList.exists({ participants: participantKey(req.userObj._id, result._id) })
+    if (blocked) {
         return res.status(404).json({ message: `User with email ${email} not found!` })
     }
 
@@ -65,9 +65,11 @@ const findUserById = async (req, res, next) => {
     // BlockList Check. A block from them hides the user, a block from me is shown as blockedByMe.
     if (blocked && !blocked.senderId.equals(userId)) { return res.status(404).json({ message: `User not found!` }) }
 
+    const userData = blocked ? blockedUserCard(result) : result.filterSafeData()
+
     // Attaching connection status
     const data = {
-        ...result.filterSafeData(),
+        ...userData,
         connectionData: {
             status: existing ? existing.status : null,
             senderId: existing ? existing.senderId : null,

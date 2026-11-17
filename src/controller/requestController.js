@@ -7,6 +7,7 @@ const { SAFE_DATA } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
 const { decrementFollowerCount } = require("../services/followCounter")
 const { runInTransaction } = require("../utils/transaction")
+const { blockedUserCard } = require("../utils/publicProfile")
 
 
 // Helper Functions
@@ -151,7 +152,7 @@ const blockRequest = async (req, res, next) => {
     const { userId, targetUserId } = getUserAndTarget(req)
 
     // Check if connection request exists -> Done by blockListCheck middleware
-    const targetUser = await User.findById(targetUserId).select("fullName email")
+    const targetUser = await User.findById(targetUserId).select("firstName lastName fullName pfp email")
     if (!targetUser) return res.status(404).json({ message: `User not found!` })
 
     const connectionObj = { senderId: userId, receiverId: targetUserId }
@@ -159,7 +160,7 @@ const blockRequest = async (req, res, next) => {
     await blockRequest.save()
     return res.status(200).json({
         message: `User blocked successfully!`,
-        data: { _id: targetUser._id, fullName: targetUser.fullName, email: targetUser.email }
+        data: blockedUserCard(targetUser)
     })
 }
 

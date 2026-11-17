@@ -9,7 +9,7 @@ const CONNECTION_SAFE_DATA = ["senderId", "receiverId", "status", "createdAt"]
 const PUBLIC_PROFILE_FIELDS = ["firstName", "lastName", "fullName", "pfp", "about"]
 const AUTHOR_CARD_FIELDS = ["firstName", "lastName", "fullName", "pfp"]
 const USER_NAME_FIELDS = ["firstName", "lastName", "fullName"]
-const CHAT_USER_FIELDS = ["fullName", "firstName", "pfp", "email"]
+const CHAT_USER_FIELDS = ["fullName", "firstName", "lastName", "pfp", "email"]
 const ENTRY_FIELDS = ["chapterId", "type", "title", "preview", "body", "mood", "tags", "createdAt", "updatedAt"]
 
 const VISIBILITIES = ["public", "private", "friends", "selected", "subscribed"]

@@ -2,7 +2,7 @@ const { Chat } = require("../model/chat")
 const { User } = require("../model/user")
 const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
-const { visibleChatUser, hiddenChatUser } = require("../utils/publicProfile")
+const { visibleChatUser, hiddenChatUser, blockedUserCard } = require("../utils/publicProfile")
 const { CHAT_USER_FIELDS } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
 const emptyConnection = { status: null, senderId: null, blockedByMe: false }
@@ -90,7 +90,7 @@ const getChats = async (req, res) => {
 
         return {
             _id: chat._id,
-            user: visibleChatUser(user),
+            user: block ? { ...blockedUserCard(user), isUnknown: false } : visibleChatUser(user),
             lastMessage: chat.lastMessage,
             unreadCount: chat.unreadCount,
             connectionData: {

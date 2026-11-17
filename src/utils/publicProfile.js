@@ -33,12 +33,21 @@ const visibleChatUser = user => ({
 
 const hiddenChatUser = id => ({ _id: id, isUnknown: true })
 
+// The person who blocked sees this much of the person they blocked: name, picture, and email.
+const blockedUserCard = user => ({
+    _id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    fullName: user.fullName,
+    pfp: user.pfp ?? null,
+    email: user.email
+})
+
 module.exports = {
     publicProfile,
     displayName,
     commentAuthor,
     visibleChatUser,
-    hiddenChatUser
+    hiddenChatUser,
+    blockedUserCard
 }
-
-

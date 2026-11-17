@@ -76,14 +76,18 @@ const requireVisibleComment = async (req, res, next) => {
     // Return 404 for regular users if hidden
     if (req.comment.isHidden) return res.status(404).json({ message: "Comment does not exist" })
 
-    // If parent comment is hidden, all child comment are also hidden
+    // If parent comment is hidden, all child comments are also hidden. The parent author is checked for a block below.
+    let parentAuthorId = null
     if (req.comment.parentId) {
-        const parent = await Comment.findById(req.comment.parentId).select("isHidden").lean()
+        const parent = await Comment.findById(req.comment.parentId).select("isHidden userId").lean()
         if (!parent || parent.isHidden) return res.status(404).json({ message: "Comment does not exist" })
+        parentAuthorId = parent.userId
     }
 
-    // If block exists between Viewer and Commentator, they can't view the comment
-    const blocked = await BlockList.exists({ participants: participantKey(req.userObj._id, req.comment.userId) })
+    // A block with the commenter, or with the author of the comment being replied to, hides it.
+    // The journal author returned above, so their own journal is not affected.
+    const keys = [req.comment.userId, parentAuthorId].filter(Boolean).map(id => participantKey(req.userObj._id, id))
+    const blocked = await BlockList.exists({ participants: { $in: keys } })
     if (blocked) return res.status(404).json({ message: "Comment does not exist" })
 
     next()

@@ -3,6 +3,7 @@ const { Connection } = require("../model/connection")
 const { BlockList } = require("../model/blocklist")
 const { SAFE_DATA } = require("../utils/constant")
 const { participantKey } = require("../utils/participantKey")
+const { blockedUserCard } = require("../utils/publicProfile")
 
 const receivedRequests = async (req, res, next) => {
     const userId = req.userObj._id
@@ -69,8 +70,8 @@ const blockedUsers = async (req, res, next) => {
     const userId = req.userObj._id
     const searchResult = await BlockList.find({
         senderId: userId
-    }).select("receiverId").populate("receiverId", SAFE_DATA).skip(req.skip).limit(req.limit).lean()
-    const responseObj = searchResult.filter(item => item.receiverId).map(item => item.receiverId)
+    }).select("receiverId").populate("receiverId", "_id firstName lastName fullName pfp email").skip(req.skip).limit(req.limit).lean()
+    const responseObj = searchResult.filter(item => item.receiverId).map(item => blockedUserCard(item.receiverId))
     return res.status(200).json({ message: `List of blocked users`, data: responseObj })
 }
 

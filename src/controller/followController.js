@@ -2,7 +2,6 @@ const { Journal } = require("../model/journal")
 const { Follow } = require("../model/follow")
 const { User } = require("../model/user")
 const { Subscription } = require("../model/subscription")
-const { BlockList } = require("../model/blocklist")
 const { httpError } = require("../utils/httpError")
 const { runInTransaction } = require("../utils/transaction")
 const { paginatedResponse } = require("../utils/apiResponse")
@@ -174,12 +173,7 @@ const reviewFollower = async (req, res) => {
         return res.status(400).json({ message: "You cannot review your own follow request" })
     }
 
-    // A follower who blocked the author is hidden from the follower list, so their request looks missing here too.
-    // A follower the author blocked can still be reviewed.
-    const blockedByFollower = await BlockList.exists({ senderId: followerId, receiverId: req.userObj._id })
-    if (blockedByFollower) {
-        return res.status(404).json({ message: "No follow request exists for this user" })
-    }
+    // Block doesn't affect this review.
 
     const result = await runInTransaction(async session => {
         const journal = await Journal.findOne({ _id: journalId, authorId: req.userObj._id }).session(session)
